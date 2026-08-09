@@ -1,0 +1,2682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GAP Roofing & Construction — CRM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Inter', sans-serif; background: #F6F4EF; color: #242220; }
+  #config-banner { background: #FAECE7; border-bottom: 2px solid #B5451C; padding: 10px 16px; font-size: 13px; display: none; }
+  #config-banner.show { display: block; }
+  #config-banner input { padding: 6px 8px; border-radius: 5px; border: 1px solid #DEDBD1; font-size: 12.5px; margin-right: 6px; width: 260px; }
+  #config-banner button { padding: 6px 12px; border-radius: 5px; border: none; background: #B5451C; color: #fff; cursor: pointer; font-size: 12.5px; }
+  #root { padding: 20px; max-width: 1300px; margin: 0 auto; }
+</style>
+</head>
+<body>
+
+<div id="config-banner">
+  <strong>Setup:</strong> Paste your Apps Script Web App URL and token (from Google Apps Script setup) to connect —
+  <input id="cfg-url" placeholder="Web app URL" />
+  <input id="cfg-token" placeholder="Token" />
+  <button onclick="saveConfig()">Save & Connect</button>
+</div>
+
+<div id="root">Loading…</div>
+
+<script>
+  function getConfig() {
+    return { url: localStorage.getItem('crm_api_url') || '', token: localStorage.getItem('crm_api_token') || '' };
+  }
+  function saveConfig() {
+    localStorage.setItem('crm_api_url', document.getElementById('cfg-url').value.trim());
+    localStorage.setItem('crm_api_token', document.getElementById('cfg-token').value.trim());
+    location.reload();
+  }
+  var cfg = getConfig();
+  if (!cfg.url || !cfg.token) {
+    document.getElementById('config-banner').classList.add('show');
+  }
+</script>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+<script>
+const {
+  useState,
+  useEffect,
+  useMemo
+} = React;
+const CFG = {
+  url: localStorage.getItem('crm_api_url') || '',
+  token: localStorage.getItem('crm_api_token') || ''
+};
+const STAGE_ORDER = ["New Lead", "Contact Attempted", "Inspection Scheduled", "Inspection Complete", "Estimate Sent", "Follow-Up / Negotiating", "Contract Signed", "Insurance Claim Filed", "Permit Approved", "Materials Ordered", "Scheduled for Install", "In Production", "Final Walkthrough", "Invoiced", "Paid / Closed Won", "Lost / Dead"];
+const STAGE_GROUP = {
+  "New Lead": "lead",
+  "Contact Attempted": "lead",
+  "Inspection Scheduled": "lead",
+  "Inspection Complete": "lead",
+  "Estimate Sent": "lead",
+  "Follow-Up / Negotiating": "lead",
+  "Contract Signed": "signed",
+  "Insurance Claim Filed": "claim",
+  "Permit Approved": "production",
+  "Materials Ordered": "production",
+  "Scheduled for Install": "production",
+  "In Production": "production",
+  "Final Walkthrough": "production",
+  "Invoiced": "production",
+  "Paid / Closed Won": "won",
+  "Lost / Dead": "lost"
+};
+const GROUP_COLORS = {
+  lead: {
+    bg: "#EDEBE3",
+    text: "#444441",
+    dot: "#888780"
+  },
+  signed: {
+    bg: "#E6F1FB",
+    text: "#0C447C",
+    dot: "#378ADD"
+  },
+  claim: {
+    bg: "#FAEEDA",
+    text: "#633806",
+    dot: "#BA7517"
+  },
+  production: {
+    bg: "#E1F5EE",
+    text: "#085041",
+    dot: "#0F6E56"
+  },
+  won: {
+    bg: "#EAF3DE",
+    text: "#27500A",
+    dot: "#3B6D11"
+  },
+  lost: {
+    bg: "#FCEBEB",
+    text: "#791F1F",
+    dot: "#A32D2D"
+  }
+};
+const RUST = "#B5451C",
+  RUST_DARK = "#7A2D11",
+  INK = "#242220",
+  PAPER = "#F6F4EF",
+  CARD = "#FFFFFF",
+  LINE = "#DEDBD1",
+  MUTE = "#6F6C63",
+  DANGER_BG = "#FCEBEB",
+  DANGER_TEXT = "#791F1F",
+  OK_BG = "#EAF3DE",
+  OK_TEXT = "#27500A",
+  ADVANCE_AMOUNT = 500,
+  STALE_DAYS = 14;
+const FONT_HEAD = "'Oswald', sans-serif",
+  FONT_BODY = "'Inter', sans-serif";
+function isClosed(j) {
+  return j.closed === "Yes";
+}
+function fmtMoney(v) {
+  const n = Number(v);
+  if (!v || isNaN(n)) return "—";
+  return "$" + n.toLocaleString("en-US", {
+    maximumFractionDigits: 0
+  });
+}
+function fmtSigned(v) {
+  const n = Number(v) || 0;
+  return (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", {
+    maximumFractionDigits: 0
+  });
+}
+function fmtDate(v) {
+  return v || "—";
+}
+function toDatetimeLocal(v) {
+  if (!v) return "";
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return "";
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function fmtDateTime(v) {
+  if (!v) return "Not set";
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return "Not set";
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+function calcCommission(j) {
+  if (j.commission != null && j.commission !== "" && Number(j.commission) !== 0) return Number(j.commission);
+  if (j.contractAmount) return Number(j.contractAmount) * 0.1;
+  return 0;
+}
+function calcInstallPaid(j) {
+  return (Number(j.installAdvance) || 0) + (Number(j.installPaidFull) || 0);
+}
+function calcMaterialCost(j) {
+  return Number(j.materialCost) || 0;
+}
+function calcNetPL(j) {
+  return (Number(j.contractAmount) || 0) - calcCommission(j) - calcInstallPaid(j) - calcMaterialCost(j);
+}
+function parseDate(s) {
+  if (!s) return null;
+  const d = new Date(s + "T00:00:00");
+  return isNaN(d.getTime()) ? null : d;
+}
+function daysSinceActivity(j) {
+  const a = parseDate(j.lastUpdated),
+    b = parseDate(j.dateEntered);
+  const d = a && b ? a > b ? a : b : a || b;
+  if (!d) return null;
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return Math.round((now - d) / 86400000);
+}
+function isStale(j) {
+  if (isClosed(j)) return false;
+  const d = daysSinceActivity(j);
+  return d !== null && d >= STALE_DAYS;
+}
+function normalizeName(n) {
+  return (n || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+function mapsLink(a) {
+  return a ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a)}` : null;
+}
+function calendarLink(j, kind) {
+  kind = kind || "insurance";
+  const dateField = kind === "gap" ? j.gapInspectionDateTime : j.inspectionDateTime;
+  const title = kind === "gap" ? `GAP Pre-Inspection – ${j.customerName}` : `Roof Inspection – ${j.customerName}`;
+  let start;
+  if (dateField) {
+    const d = new Date(dateField);
+    start = isNaN(d.getTime()) ? null : d;
+  }
+  if (!start) {
+    start = new Date();
+    start.setDate(start.getDate() + 1);
+    start.setHours(9, 0, 0, 0);
+  }
+  const end = new Date(start.getTime() + 3600000);
+  const fmt = d => d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  const p = new URLSearchParams({
+    action: "TEMPLATE",
+    text: title,
+    dates: `${fmt(start)}/${fmt(end)}`,
+    details: `Job ${j.id}${j.salesRep ? ` · Rep: ${j.salesRep}` : ""}`,
+    location: j.propertyAddress || ""
+  });
+  return `https://calendar.google.com/calendar/render?${p.toString()}`;
+}
+function escapeHtml(str) {
+  return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+const ESTIMATE_ITEMS = {
+  roofing: ["Tear-off & disposal", "Decking repair (if needed)", "Underlayment", "Shingles / roofing material", "Flashing & vents", "Ridge cap", "Gutters (if included)", "Labor & installation", "Permit"],
+  construction: ["Demolition / removal", "Materials", "Fixtures & finishes", "Labor", "Permits", "Cleanup & disposal"]
+};
+function buildEstimateHTML(job, kind) {
+  const title = kind === "roofing" ? "Roofing Estimate" : "Construction Estimate";
+  const items = ESTIMATE_ITEMS[kind] || [];
+  const rowsHtml = items.map(desc => `
+    <tr>
+      <td><input type="text" value="${escapeHtml(desc)}" /></td>
+      <td><input type="number" class="qty" value="1" min="0" step="1" /></td>
+      <td><input type="number" class="price" value="0" min="0" step="0.01" /></td>
+      <td class="rowtotal">$0</td>
+      <td class="noprint"><button class="removeBtn" onclick="this.closest('tr').remove(); recalc();">✕</button></td>
+    </tr>`).join("");
+  const today = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric"
+  });
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>${title} - ${escapeHtml(job.customerName)}</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; background: #F6F4EF; color: #242220; margin: 0; padding: 30px; }
+  .sheet { max-width: 800px; margin: 0 auto; background: #fff; border: 1px solid #DEDBD1; border-radius: 8px; padding: 36px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #B5451C; padding-bottom: 14px; margin-bottom: 20px; }
+  .company { font-family: 'Oswald', sans-serif; font-size: 24px; font-weight: 600; }
+  .company span { color: #B5451C; }
+  .sub { font-size: 12px; color: #6F6C63; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+  .title { font-family: 'Oswald', sans-serif; font-size: 20px; font-weight: 500; color: #B5451C; text-align: right; }
+  .meta { font-size: 12px; color: #6F6C63; text-align: right; margin-top: 4px; }
+  .infoGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; margin-bottom: 24px; font-size: 13.5px; }
+  .infoGrid div b { color: #6F6C63; font-weight: 500; font-size: 11px; text-transform: uppercase; display: block; margin-bottom: 2px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+  th { background: #EEECE4; text-align: left; font-size: 11px; text-transform: uppercase; color: #6F6C63; padding: 8px 10px; }
+  td { padding: 6px 8px; border-bottom: 1px solid #DEDBD1; }
+  td input { width: 100%; border: 1px solid transparent; padding: 5px 6px; font-family: 'Inter', sans-serif; font-size: 13px; border-radius: 4px; background: transparent; }
+  td input:hover, td input:focus { border-color: #DEDBD1; background: #FAF9F5; outline: none; }
+  .qty, .price { text-align: right; }
+  .rowtotal { text-align: right; font-weight: 500; white-space: nowrap; }
+  .removeBtn { border: none; background: none; color: #6F6C63; cursor: pointer; font-size: 13px; }
+  .addRow { margin: 8px 0 20px; padding: 7px 14px; border-radius: 6px; border: 1px solid #DEDBD1; background: #fff; cursor: pointer; font-size: 12.5px; }
+  .totalsBox { display: flex; justify-content: flex-end; margin-bottom: 24px; }
+  .totalsBox table { width: 260px; }
+  .totalsBox td { border: none; padding: 6px 10px; }
+  .grandTotal td { font-weight: 600; font-size: 16px; border-top: 2px solid #242220; }
+  .notes { font-size: 11.5px; color: #6F6C63; line-height: 1.5; margin-bottom: 24px; }
+  .sigRow { display: flex; gap: 40px; margin-top: 40px; }
+  .sigLine { flex: 1; border-top: 1px solid #242220; padding-top: 6px; font-size: 12px; color: #6F6C63; }
+  .printBtn { display: inline-block; margin-bottom: 16px; padding: 9px 18px; border-radius: 6px; border: none; background: #B5451C; color: #fff; font-family: 'Inter', sans-serif; font-size: 13.5px; cursor: pointer; }
+  @media print { .noprint, .printBtn, .addRow { display: none !important; } body { background: #fff; padding: 0; } .sheet { border: none; padding: 0; } }
+</style></head>
+<body>
+  <button class="printBtn noprint" onclick="window.print()">🖨️ Print / Save as PDF</button>
+  <div class="sheet">
+    <div class="header">
+      <div>
+        <div class="company">GAP ROOFING <span>&</span> CONSTRUCTION</div>
+        <div class="sub">GAF Master Elite Certified &middot; San Antonio, TX</div>
+      </div>
+      <div>
+        <div class="title">${title}</div>
+        <div class="meta">Job ${escapeHtml(job.id)} &middot; ${today}</div>
+      </div>
+    </div>
+    <div class="infoGrid">
+      <div><b>Customer</b>${escapeHtml(job.customerName)}</div>
+      <div><b>Sales rep</b>${escapeHtml(job.salesRep || "Unassigned")}</div>
+      <div><b>Property address</b>${escapeHtml(job.propertyAddress || "—")}</div>
+      <div><b>Phone</b>${escapeHtml(job.phone || "—")}</div>
+    </div>
+    <table id="itemsTable">
+      <thead><tr><th style="width:46%">Description</th><th style="width:12%">Qty</th><th style="width:16%">Unit price</th><th style="width:16%">Total</th><th class="noprint"></th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    <button class="addRow noprint" onclick="addRow()">+ Add line item</button>
+    <div class="totalsBox">
+      <table>
+        <tr class="grandTotal"><td>Estimated total</td><td id="grandTotal" style="text-align:right">$0</td></tr>
+      </table>
+    </div>
+    <div class="notes">
+      This is a preliminary estimate based on visible conditions at the time of inspection. Final pricing may be
+      adjusted after a full inspection or upon discovery of additional damage. This estimate is valid for 30 days
+      from the date above. GAP Roofing &amp; Construction LLC &middot; GAF Contractor ID 1294493.
+    </div>
+    <div class="sigRow">
+      <div class="sigLine">Customer approval &amp; date</div>
+      <div class="sigLine">GAP Roofing representative &amp; date</div>
+    </div>
+  </div>
+<script>
+function recalc() {
+  var rows = document.querySelectorAll("#itemsTable tbody tr");
+  var grand = 0;
+  rows.forEach(function(row) {
+    var qty = parseFloat(row.querySelector(".qty").value) || 0;
+    var price = parseFloat(row.querySelector(".price").value) || 0;
+    var total = qty * price;
+    row.querySelector(".rowtotal").textContent = "$" + total.toLocaleString("en-US",{maximumFractionDigits:2});
+    grand += total;
+  });
+  document.getElementById("grandTotal").textContent = "$" + grand.toLocaleString("en-US",{maximumFractionDigits:2});
+}
+function addRow() {
+  var tbody = document.querySelector("#itemsTable tbody");
+  var tr = document.createElement("tr");
+  tr.innerHTML = '<td><input type="text" value="" placeholder="Description"/></td><td><input type="number" class="qty" value="1" min="0" step="1"/></td><td><input type="number" class="price" value="0" min="0" step="0.01"/></td><td class="rowtotal">$0</td><td class="noprint"><button class="removeBtn" onclick="this.closest(\'tr\').remove(); recalc();">✕</button></td>';
+  tbody.appendChild(tr);
+  tr.querySelectorAll("input").forEach(function(inp){ inp.addEventListener("input", recalc); });
+}
+document.querySelectorAll("#itemsTable input").forEach(function(inp){ inp.addEventListener("input", recalc); });
+recalc();
+<\/script>
+</body></html>`;
+}
+function openEstimate(job, kind) {
+  const html = buildEstimateHTML(job, kind);
+  const win = window.open("", "_blank");
+  if (win) {
+    win.document.write(html);
+    win.document.close();
+  }
+}
+function jobFinancialFlags(j) {
+  const flags = [];
+  if (j.balanceDue && Number(j.balanceDue) > 0) flags.push(`Customer balance due: ${fmtMoney(j.balanceDue)}`);
+  if (j.salesRepAdvancePaid !== "Yes") flags.push("Sales rep advance not marked paid");
+  if (j.installersPaidFull !== "Yes") flags.push("Install crew not marked paid in full");
+  return flags;
+}
+async function api(action, params, isPost, body) {
+  if (!CFG.url) throw new Error("Not configured");
+  if (!isPost) {
+    const q = new URLSearchParams({
+      action,
+      token: CFG.token,
+      _t: Date.now(),
+      ...params
+    });
+    const res = await fetch(`${CFG.url}?${q.toString()}`, {
+      cache: "no-store"
+    });
+    return res.json();
+  } else {
+    const res = await fetch(CFG.url, {
+      method: "POST",
+      cache: "no-store",
+      body: JSON.stringify({
+        action,
+        token: CFG.token,
+        ...body
+      })
+    });
+    return res.json();
+  }
+}
+function Tab({
+  active,
+  onClick,
+  label
+}) {
+  return /*#__PURE__*/React.createElement("button", {
+    onClick: onClick,
+    style: {
+      padding: "7px 12px",
+      borderRadius: 6,
+      border: `1px solid ${active ? RUST : LINE}`,
+      background: active ? "#FAECE7" : CARD,
+      color: active ? RUST_DARK : MUTE,
+      cursor: "pointer",
+      fontFamily: FONT_BODY,
+      fontSize: 12.5,
+      marginRight: 6
+    }
+  }, label);
+}
+function KPICard({
+  label,
+  value,
+  sub
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 10,
+      padding: "14px 16px",
+      flex: 1,
+      minWidth: 140
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: MUTE,
+      textTransform: "uppercase",
+      marginBottom: 6
+    }
+  }, label), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 24,
+      fontWeight: 500
+    }
+  }, value), sub && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: MUTE,
+      marginTop: 4
+    }
+  }, sub));
+}
+function EditField({
+  label,
+  value,
+  onChange,
+  type = "text",
+  options
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: MUTE,
+      textTransform: "uppercase",
+      marginBottom: 3
+    }
+  }, label), type === "select" ? /*#__PURE__*/React.createElement("select", {
+    value: value ?? "",
+    onChange: e => onChange(e.target.value),
+    style: {
+      width: "100%",
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`
+    }
+  }, options.map(o => /*#__PURE__*/React.createElement("option", {
+    key: o,
+    value: o
+  }, o))) : type === "yesno" ? /*#__PURE__*/React.createElement("select", {
+    value: value === "Yes" ? "Yes" : "No",
+    onChange: e => onChange(e.target.value),
+    style: {
+      width: "100%",
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "No"
+  }, "No"), /*#__PURE__*/React.createElement("option", {
+    value: "Yes"
+  }, "Yes")) : type === "textarea" ? /*#__PURE__*/React.createElement("textarea", {
+    value: value ?? "",
+    onChange: e => onChange(e.target.value),
+    rows: 2,
+    style: {
+      width: "100%",
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`
+    }
+  }) : /*#__PURE__*/React.createElement("input", {
+    type: type,
+    value: value ?? "",
+    onChange: e => onChange(e.target.value),
+    style: {
+      width: "100%",
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      boxSizing: "border-box"
+    }
+  }));
+}
+function DocumentsSection({
+  jobId
+}) {
+  const [docs, setDocs] = useState([]);
+  const [label, setLabel] = useState("");
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    api("docs", {
+      jobId
+    }).then(r => setDocs(r.docs || []));
+  }, [jobId]);
+  async function add() {
+    if (!url.trim()) return;
+    let u = url.trim();
+    if (!/^https?:\/\//i.test(u)) u = "https://" + u;
+    await api(null, null, true, {
+      action: "addDoc",
+      jobId,
+      label: label || "Document",
+      url: u
+    });
+    setLabel("");
+    setUrl("");
+    api("docs", {
+      jobId
+    }).then(r => setDocs(r.docs || []));
+  }
+  async function remove(u) {
+    await api(null, null, true, {
+      action: "removeDoc",
+      jobId,
+      url: u
+    });
+    api("docs", {
+      jobId
+    }).then(r => setDocs(r.docs || []));
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: MUTE,
+      textTransform: "uppercase",
+      marginBottom: 6
+    }
+  }, "📎 Insurance & GAP documents"), docs.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: MUTE,
+      marginBottom: 8
+    }
+  }, "No documents linked yet."), docs.map((d, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      padding: "6px 0",
+      borderBottom: `1px solid ${LINE}`
+    }
+  }, /*#__PURE__*/React.createElement("a", {
+    href: d.url,
+    target: "_blank",
+    style: {
+      color: RUST_DARK,
+      fontSize: 13,
+      textDecoration: "none"
+    }
+  }, "🔗 ", d.label), /*#__PURE__*/React.createElement("button", {
+    onClick: () => remove(d.url),
+    style: {
+      border: "none",
+      background: "none",
+      cursor: "pointer",
+      color: MUTE
+    }
+  }, "✕"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      marginTop: 8,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    value: label,
+    onChange: e => setLabel(e.target.value),
+    placeholder: "Label",
+    style: {
+      flex: "1 1 140px",
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`
+    }
+  }), /*#__PURE__*/React.createElement("input", {
+    value: url,
+    onChange: e => setUrl(e.target.value),
+    placeholder: "Paste Drive link",
+    style: {
+      flex: "2 1 180px",
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: add,
+    style: {
+      padding: "7px 14px",
+      borderRadius: 5,
+      border: "none",
+      background: RUST,
+      color: "#fff",
+      cursor: "pointer"
+    }
+  }, "Add link")));
+}
+function DetailModal({
+  job,
+  onClose,
+  onSave,
+  onDelete
+}) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState(null);
+  useEffect(() => {
+    if (job) {
+      setForm({
+        ...job
+      });
+      setEditing(false);
+    }
+  }, [job && job.id]);
+  if (!job || !form) return null;
+  const c = GROUP_COLORS[STAGE_GROUP[job.stage]] || GROUP_COLORS.lead;
+  const flags = jobFinancialFlags(job);
+  function set(f) {
+    return v => setForm(prev => ({
+      ...prev,
+      [f]: v
+    }));
+  }
+  async function save() {
+    const patch = {
+      ...form
+    };
+    ["contractAmount", "balanceDue", "commission", "installAdvance", "installPaidFull", "materialCost"].forEach(f => {
+      patch[f] = patch[f] === "" || patch[f] == null ? null : Number(patch[f]);
+    });
+    await onSave(job.id, patch);
+    setEditing(false);
+  }
+  async function markEstimateSent(jobId) {
+    const today = new Date().toISOString().slice(0, 10);
+    await onSave(jobId, {
+      estimateSent: "Yes",
+      estimateSentDate: today
+    });
+  }
+  async function handleDelete() {
+    if (!window.confirm(`Permanently delete ${job.customerName} (${job.id})? This cannot be undone.`)) return;
+    await onDelete(job.id);
+    onClose();
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    onClick: onClose,
+    style: {
+      position: "fixed",
+      inset: 0,
+      background: "rgba(36,34,32,0.45)",
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "flex-start",
+      paddingTop: 40,
+      zIndex: 20,
+      overflowY: "auto"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    style: {
+      background: PAPER,
+      borderRadius: 12,
+      width: 560,
+      maxWidth: "92%",
+      maxHeight: "85vh",
+      overflowY: "auto",
+      border: `1px solid ${LINE}`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "18px 22px",
+      borderBottom: `1px solid ${LINE}`,
+      display: "flex",
+      justifyContent: "space-between",
+      background: CARD,
+      borderRadius: "12px 12px 0 0"
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 20
+    }
+  }, job.customerName), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: MUTE
+    }
+  }, job.id, job.coOwner ? ` · with ${job.coOwner}` : "")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6
+    }
+  }, !editing ? /*#__PURE__*/React.createElement("button", {
+    onClick: () => setEditing(true),
+    style: {
+      background: "#FAECE7",
+      border: `1px solid ${RUST}`,
+      color: RUST_DARK,
+      borderRadius: 6,
+      padding: "6px 10px",
+      cursor: "pointer"
+    }
+  }, "Edit") : /*#__PURE__*/React.createElement("button", {
+    onClick: save,
+    style: {
+      background: RUST,
+      border: "none",
+      color: "#fff",
+      borderRadius: 6,
+      padding: "6px 10px",
+      cursor: "pointer"
+    }
+  }, "Save"), editing && /*#__PURE__*/React.createElement("button", {
+    onClick: handleDelete,
+    style: {
+      background: DANGER_BG,
+      border: `1px solid ${DANGER_TEXT}`,
+      color: DANGER_TEXT,
+      borderRadius: 6,
+      padding: "6px 10px",
+      cursor: "pointer"
+    }
+  }, "Delete"), /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    style: {
+      background: "none",
+      border: "none",
+      cursor: "pointer"
+    }
+  }, "✕"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "14px 22px 4px"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: c.bg,
+      color: c.text,
+      padding: "4px 10px",
+      borderRadius: 5,
+      fontSize: 12
+    }
+  }, job.stage), isClosed(job) && /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: "#EEECE4",
+      color: MUTE,
+      padding: "4px 10px",
+      borderRadius: 5,
+      fontSize: 12,
+      marginLeft: 6
+    }
+  }, "Closed / archived")), isClosed(job) && !editing && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "10px 22px 0"
+    }
+  }, flags.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: OK_BG,
+      color: OK_TEXT,
+      padding: "8px 12px",
+      borderRadius: 6,
+      fontSize: 12.5
+    }
+  }, "✓ No outstanding financial issues") : /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: DANGER_BG,
+      color: DANGER_TEXT,
+      padding: "8px 12px",
+      borderRadius: 6,
+      fontSize: 12.5
+    }
+  }, "⚠ ", flags.join(" · "))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "10px 22px 20px"
+    }
+  }, !editing ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Property:"), " ", /*#__PURE__*/React.createElement("a", {
+    href: mapsLink(job.propertyAddress),
+    target: "_blank"
+  }, job.propertyAddress || "—")), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Owner address:"), " ", /*#__PURE__*/React.createElement("a", {
+    href: mapsLink(job.ownerAddress),
+    target: "_blank"
+  }, job.ownerAddress || "—")), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Phone:"), " ", job.phone ? /*#__PURE__*/React.createElement("a", {
+    href: `tel:${job.phone}`
+  }, job.phone) : "—"), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Email:"), " ", job.email ? /*#__PURE__*/React.createElement("a", {
+    href: `mailto:${job.email}`
+  }, job.email) : "—"), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Sales rep:"), " ", job.salesRep || "Unassigned"), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Date entered:"), " ", fmtDate(job.dateEntered), " · ", /*#__PURE__*/React.createElement("b", null, "Last updated:"), " ", fmtDate(job.lastUpdated)), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Job type:"), " ", job.jobType || "—"), job.jobType === "Insurance" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Insurance carrier:"), " ", job.insuranceCarrier || "—", " · ", /*#__PURE__*/React.createElement("b", null, "Claim #:"), " ", job.claimNum || "—"), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Weather report:"), " ", job.weatherReport || "No", " · ", /*#__PURE__*/React.createElement("b", null, "Public adjuster:"), " ", job.sentPublicAdjuster || "No", " · ", /*#__PURE__*/React.createElement("b", null, "Appraisal:"), " ", job.sentAppraisal || "No")), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Contract:"), " ", fmtMoney(job.contractAmount), " · ", /*#__PURE__*/React.createElement("b", null, "Balance due:"), " ", fmtMoney(job.balanceDue)), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Commission:"), " ", fmtMoney(calcCommission(job)), " · ", /*#__PURE__*/React.createElement("b", null, "Advance paid:"), " ", job.salesRepAdvancePaid || "No"), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Install crew paid:"), " ", job.installersPaidFull || "No", " · ", /*#__PURE__*/React.createElement("b", null, "Install payment:"), " ", fmtMoney(calcInstallPaid(job))), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Material cost:"), " ", fmtMoney(calcMaterialCost(job)), " · ", /*#__PURE__*/React.createElement("b", null, "Net P/L:"), " ", fmtSigned(calcNetPL(job))), job.notes && /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Notes:"), " ", job.notes), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Insurance inspection date/time:"), " ", fmtDateTime(job.inspectionDateTime), job.inspectionDateTime && job.reminderSent === "Yes" ? " (2-hour reminder already sent)" : ""), /*#__PURE__*/React.createElement("a", {
+    href: calendarLink(job, "insurance"),
+    target: "_blank",
+    style: {
+      display: "inline-block",
+      marginTop: 6,
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 6,
+      padding: "7px 12px",
+      color: INK,
+      textDecoration: "none",
+      fontSize: 13
+    }
+  }, "📅 ", job.inspectionDateTime ? "Add to Google Calendar" : "Schedule insurance inspection (set date first)"), !job.inspectionDateTime && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: MUTE,
+      marginTop: 6
+    }
+  }, "Set \"Insurance inspection date & time\" in Edit first — that's what drives the Schedule tab and the 2-hour reminder."), /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginTop: 14
+    }
+  }, /*#__PURE__*/React.createElement("b", null, "GAP pre-inspection date/time:"), " ", fmtDateTime(job.gapInspectionDateTime)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: MUTE,
+      marginTop: -8,
+      marginBottom: 6
+    }
+  }, "GAP's own visit to check for damage before the insurance inspection is scheduled."), /*#__PURE__*/React.createElement("a", {
+    href: calendarLink(job, "gap"),
+    target: "_blank",
+    style: {
+      display: "inline-block",
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 6,
+      padding: "7px 12px",
+      color: INK,
+      textDecoration: "none",
+      fontSize: 13
+    }
+  }, "📅 ", job.gapInspectionDateTime ? "Add to Google Calendar" : "Schedule GAP pre-inspection (set date first)"), job.estimateSent === "Yes" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 5,
+      background: OK_BG,
+      color: OK_TEXT,
+      padding: "4px 10px",
+      borderRadius: 5,
+      fontSize: 12,
+      marginTop: 12
+    }
+  }, "✓ Estimate sent", job.estimateSentDate ? ` (${job.estimateSentDate})` : ""), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginTop: 10,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      openEstimate(job, "roofing");
+      markEstimateSent(job.id);
+    },
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 6,
+      padding: "7px 12px",
+      color: INK,
+      fontSize: 13,
+      cursor: "pointer"
+    }
+  }, "🏠 Roofing Estimate"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      openEstimate(job, "construction");
+      markEstimateSent(job.id);
+    },
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 6,
+      padding: "7px 12px",
+      color: INK,
+      fontSize: 13,
+      cursor: "pointer"
+    }
+  }, "🧱 Construction Estimate"))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#EEECE4",
+      padding: "7px 10px",
+      borderRadius: 5,
+      fontSize: 11.5,
+      color: MUTE,
+      marginBottom: 10
+    }
+  }, "Editing updates the shared Google Sheet for everyone."), /*#__PURE__*/React.createElement(EditField, {
+    label: "Stage",
+    value: form.stage,
+    type: "select",
+    options: STAGE_ORDER,
+    onChange: set("stage")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Insurance inspection date & time",
+    value: toDatetimeLocal(form.inspectionDateTime),
+    type: "datetime-local",
+    onChange: set("inspectionDateTime")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "GAP pre-inspection date & time",
+    value: toDatetimeLocal(form.gapInspectionDateTime),
+    type: "datetime-local",
+    onChange: set("gapInspectionDateTime")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Estimate sent",
+    value: form.estimateSent,
+    type: "yesno",
+    onChange: set("estimateSent")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Closed / archived",
+    value: form.closed,
+    type: "yesno",
+    onChange: set("closed")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Property address",
+    value: form.propertyAddress,
+    onChange: set("propertyAddress")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Owner mailing address",
+    value: form.ownerAddress,
+    onChange: set("ownerAddress")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Phone",
+    value: form.phone,
+    onChange: set("phone")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Email",
+    value: form.email,
+    onChange: set("email")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Sales rep",
+    value: form.salesRep,
+    onChange: set("salesRep")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Job type",
+    value: form.jobType,
+    type: "select",
+    options: ["Insurance", "Retail", "Cash"],
+    onChange: set("jobType")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Insurance carrier",
+    value: form.insuranceCarrier,
+    onChange: set("insuranceCarrier")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Claim #",
+    value: form.claimNum,
+    onChange: set("claimNum")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Weather report on file",
+    value: form.weatherReport,
+    type: "yesno",
+    onChange: set("weatherReport")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Sent to public adjuster",
+    value: form.sentPublicAdjuster,
+    type: "yesno",
+    onChange: set("sentPublicAdjuster")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Sent to appraisal",
+    value: form.sentAppraisal,
+    type: "yesno",
+    onChange: set("sentAppraisal")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Contract amount ($)",
+    value: form.contractAmount,
+    type: "number",
+    onChange: set("contractAmount")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Balance due ($)",
+    value: form.balanceDue,
+    type: "number",
+    onChange: set("balanceDue")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Commission ($)",
+    value: form.commission,
+    type: "number",
+    onChange: set("commission")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Sales rep advance paid",
+    value: form.salesRepAdvancePaid,
+    type: "yesno",
+    onChange: set("salesRepAdvancePaid")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Install crew paid in full",
+    value: form.installersPaidFull,
+    type: "yesno",
+    onChange: set("installersPaidFull")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Install team advance ($)",
+    value: form.installAdvance,
+    type: "number",
+    onChange: set("installAdvance")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Install team paid full ($)",
+    value: form.installPaidFull,
+    type: "number",
+    onChange: set("installPaidFull")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Material cost ($)",
+    value: form.materialCost,
+    type: "number",
+    onChange: set("materialCost")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Notes",
+    value: form.notes,
+    type: "textarea",
+    onChange: set("notes")
+  })), /*#__PURE__*/React.createElement(DocumentsSection, {
+    jobId: job.id
+  }))));
+}
+function NewJobModal({
+  onClose,
+  onCreate
+}) {
+  const [form, setForm] = useState({
+    customerName: "",
+    propertyAddress: "",
+    ownerAddress: "",
+    phone: "",
+    email: "",
+    salesRep: "",
+    stage: "New Lead",
+    jobType: "Insurance",
+    insuranceCarrier: "",
+    claimNum: "",
+    contractAmount: "",
+    notes: ""
+  });
+  function set(f) {
+    return v => setForm(p => ({
+      ...p,
+      [f]: v
+    }));
+  }
+  async function create() {
+    if (!form.customerName.trim()) return;
+    await onCreate(form);
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    onClick: onClose,
+    style: {
+      position: "fixed",
+      inset: 0,
+      background: "rgba(36,34,32,0.45)",
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "flex-start",
+      paddingTop: 40,
+      zIndex: 20,
+      overflowY: "auto"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: e => e.stopPropagation(),
+    style: {
+      background: PAPER,
+      borderRadius: 12,
+      width: 480,
+      maxWidth: "92%",
+      maxHeight: "85vh",
+      overflowY: "auto",
+      border: `1px solid ${LINE}`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "18px 22px",
+      borderBottom: `1px solid ${LINE}`,
+      display: "flex",
+      justifyContent: "space-between",
+      background: CARD,
+      borderRadius: "12px 12px 0 0"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 19
+    }
+  }, "New job"), /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    style: {
+      background: "none",
+      border: "none",
+      cursor: "pointer"
+    }
+  }, "✕")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "16px 22px 22px"
+    }
+  }, /*#__PURE__*/React.createElement(EditField, {
+    label: "Customer name *",
+    value: form.customerName,
+    onChange: set("customerName")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Property address",
+    value: form.propertyAddress,
+    onChange: set("propertyAddress")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Owner mailing address",
+    value: form.ownerAddress,
+    onChange: set("ownerAddress")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Phone",
+    value: form.phone,
+    onChange: set("phone")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Email",
+    value: form.email,
+    onChange: set("email")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Sales rep",
+    value: form.salesRep,
+    onChange: set("salesRep")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Stage",
+    value: form.stage,
+    type: "select",
+    options: STAGE_ORDER,
+    onChange: set("stage")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Job type",
+    value: form.jobType,
+    type: "select",
+    options: ["Insurance", "Retail", "Cash"],
+    onChange: set("jobType")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Insurance carrier",
+    value: form.insuranceCarrier,
+    onChange: set("insuranceCarrier")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Claim #",
+    value: form.claimNum,
+    onChange: set("claimNum")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Contract amount ($)",
+    value: form.contractAmount,
+    type: "number",
+    onChange: set("contractAmount")
+  }), /*#__PURE__*/React.createElement(EditField, {
+    label: "Notes",
+    value: form.notes,
+    type: "textarea",
+    onChange: set("notes")
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: create,
+    disabled: !form.customerName.trim(),
+    style: {
+      width: "100%",
+      padding: "10px 0",
+      borderRadius: 6,
+      border: "none",
+      background: RUST,
+      color: "#fff",
+      cursor: "pointer",
+      fontWeight: 500
+    }
+  }, "Create job"))));
+}
+function SettingsPanel({
+  recipients,
+  loading,
+  onAdd,
+  onRemove,
+  onToggle
+}) {
+  const [type, setType] = useState("Email");
+  const [value, setValue] = useState("");
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const emailRows = recipients.filter(r => r.type === "Email");
+  const smsRows = recipients.filter(r => r.type === "SMS");
+  const pushRows = recipients.filter(r => r.type === "Push");
+  async function handleAdd() {
+    if (!value.trim()) return;
+    setSaving(true);
+    await onAdd(type, value.trim(), name.trim());
+    setValue("");
+    setName("");
+    setSaving(false);
+  }
+  function Row({
+    r
+  }) {
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        padding: "10px 14px",
+        borderBottom: `1px solid ${LINE}`
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 500,
+        fontSize: 13.5
+      }
+    }, r.name || "(no name)", " ", r.active === "No" && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: MUTE
+      }
+    }, "(paused)")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: MUTE
+      }
+    }, r.value)), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8,
+        alignItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: () => onToggle(r.id, r.active === "No" ? "Yes" : "No"),
+      style: {
+        fontSize: 11.5,
+        padding: "4px 9px",
+        borderRadius: 5,
+        border: `1px solid ${LINE}`,
+        background: CARD,
+        color: MUTE,
+        cursor: "pointer"
+      }
+    }, r.active === "No" ? "Resume" : "Pause"), /*#__PURE__*/React.createElement("button", {
+      onClick: () => {
+        if (window.confirm(`Remove ${r.name || r.value}?`)) onRemove(r.id);
+      },
+      style: {
+        fontSize: 11.5,
+        padding: "4px 9px",
+        borderRadius: 5,
+        border: `1px solid ${DANGER_TEXT}`,
+        background: DANGER_BG,
+        color: DANGER_TEXT,
+        cursor: "pointer"
+      }
+    }, "Remove")));
+  }
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 20,
+      color: INK,
+      marginBottom: 4
+    }
+  }, "Settings"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: MUTE,
+      marginBottom: 18
+    }
+  }, "Manage who gets email and text notifications — no need to open the Google Sheet."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      padding: 16,
+      marginBottom: 20
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 15,
+      marginBottom: 10
+    }
+  }, "Add a recipient"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap",
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("select", {
+    value: type,
+    onChange: e => setType(e.target.value),
+    style: {
+      padding: "8px 10px",
+      borderRadius: 6,
+      border: `1px solid ${LINE}`
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "Email"
+  }, "Email"), /*#__PURE__*/React.createElement("option", {
+    value: "SMS"
+  }, "SMS (text message)"), /*#__PURE__*/React.createElement("option", {
+    value: "Push"
+  }, "Push notification (free, no setup)")), /*#__PURE__*/React.createElement("input", {
+    value: name,
+    onChange: e => setName(e.target.value),
+    placeholder: "Name (e.g. Christian)",
+    style: {
+      flex: "1 1 140px",
+      padding: "8px 10px",
+      borderRadius: 6,
+      border: `1px solid ${LINE}`
+    }
+  }), /*#__PURE__*/React.createElement("input", {
+    value: value,
+    onChange: e => setValue(e.target.value),
+    placeholder: type === "Email" ? "email@example.com" : type === "SMS" ? "2105551234" : "gap-roofing-abc123",
+    style: {
+      flex: "2 1 200px",
+      padding: "8px 10px",
+      borderRadius: 6,
+      border: `1px solid ${LINE}`
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: handleAdd,
+    disabled: saving || !value.trim(),
+    style: {
+      padding: "8px 16px",
+      borderRadius: 6,
+      border: "none",
+      background: RUST,
+      color: "#fff",
+      cursor: "pointer"
+    }
+  }, saving ? "Adding..." : "Add")), type === "SMS" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: MUTE
+    }
+  }, "Just the 10-digit US phone number (e.g. 2105551234) — real text messages are sent via Twilio."), type === "Push" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: MUTE
+    }
+  }, "Free, works immediately, no registration. Have them install the \"ntfy\" app (App Store / Google Play), subscribe to a private topic name they choose (e.g. gap-roofing-christian-8k2), then enter that same topic name here.")), loading && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: MUTE,
+      fontSize: 13
+    }
+  }, "Loading..."), !loading && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 20
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 15,
+      marginBottom: 8
+    }
+  }, "Email recipients · ", emailRows.length), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      overflow: "hidden"
+    }
+  }, emailRows.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 16,
+      textAlign: "center",
+      color: MUTE,
+      fontSize: 13
+    }
+  }, "No email recipients yet."), emailRows.map(r => /*#__PURE__*/React.createElement(Row, {
+    key: r.id,
+    r: r
+  })))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 15,
+      marginBottom: 8
+    }
+  }, "SMS recipients · ", smsRows.length), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      overflow: "hidden"
+    }
+  }, smsRows.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 16,
+      textAlign: "center",
+      color: MUTE,
+      fontSize: 13
+    }
+  }, "No SMS recipients yet."), smsRows.map(r => /*#__PURE__*/React.createElement(Row, {
+    key: r.id,
+    r: r
+  })))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 20
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 15,
+      marginBottom: 8
+    }
+  }, "Push notification recipients · ", pushRows.length), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      overflow: "hidden"
+    }
+  }, pushRows.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 16,
+      textAlign: "center",
+      color: MUTE,
+      fontSize: 13
+    }
+  }, "No push recipients yet."), pushRows.map(r => /*#__PURE__*/React.createElement(Row, {
+    key: r.id,
+    r: r
+  }))))));
+}
+function App() {
+  const [jobs, setJobs] = useState(null);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [repFilter, setRepFilter] = useState("All reps");
+  const [view, setView] = useState("kanban");
+  const [selectedJob, setSelectedJob] = useState(null);
+  const [showNewJob, setShowNewJob] = useState(false);
+  const [stageFilter, setStageFilter] = useState(null);
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState("asc");
+  function toggleSort(key) {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+  const [refreshing, setRefreshing] = useState(false);
+  function refresh() {
+    setRefreshing(true);
+    api("jobs").then(r => {
+      if (r.error) setError(r.error);else {
+        setJobs(r.jobs);
+        setError("");
+      }
+    }).catch(e => setError(String(e))).finally(() => setRefreshing(false));
+  }
+  useEffect(() => {
+    refresh();
+  }, []);
+  async function saveJob(id, patch) {
+    await api(null, null, true, {
+      action: "updateJob",
+      id,
+      patch
+    });
+    refresh();
+    setSelectedJob(prev => prev && prev.id === id ? {
+      ...prev,
+      ...patch
+    } : prev);
+  }
+  async function deleteJob(id) {
+    await api(null, null, true, {
+      action: "deleteJob",
+      id
+    });
+    refresh();
+  }
+  function exportBackup() {
+    const blob = new Blob([JSON.stringify({
+      exportedAt: new Date().toISOString(),
+      jobs
+    }, null, 2)], {
+      type: "application/json"
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `gap-crm-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+  const [recipients, setRecipients] = useState([]);
+  const [recipLoading, setRecipLoading] = useState(false);
+  function loadRecipients() {
+    setRecipLoading(true);
+    api("recipients").then(r => {
+      if (!r.error) setRecipients(r.recipients || []);
+    }).finally(() => setRecipLoading(false));
+  }
+  useEffect(() => {
+    if (view === "settings") loadRecipients();
+  }, [view]);
+  async function addRecipient(type, value, name) {
+    await api(null, null, true, {
+      action: "addRecipient",
+      type,
+      value,
+      name
+    });
+    loadRecipients();
+  }
+  async function removeRecipient(id) {
+    await api(null, null, true, {
+      action: "removeRecipient",
+      id
+    });
+    loadRecipients();
+  }
+  async function toggleRecipient(id, active) {
+    await api(null, null, true, {
+      action: "toggleRecipient",
+      id,
+      active
+    });
+    loadRecipients();
+  }
+  async function createJob(form) {
+    await api(null, null, true, {
+      action: "createJob",
+      job: {
+        ...form,
+        contractAmount: form.contractAmount === "" ? null : Number(form.contractAmount)
+      }
+    });
+    setShowNewJob(false);
+    refresh();
+  }
+  if (error) return /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 40,
+      textAlign: "center",
+      color: DANGER_TEXT
+    }
+  }, "Error: ", error, ". Check the config banner at the top (URL/token).");
+  if (!jobs) return /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 40,
+      textAlign: "center",
+      color: MUTE
+    }
+  }, "Loading jobs…");
+  const activeJobs = jobs.filter(j => !isClosed(j));
+  const archivedJobs = jobs.filter(j => isClosed(j));
+  const reps = ["All reps", ...Array.from(new Set(jobs.map(j => j.salesRep || "Unassigned"))).sort()];
+  const dupCounts = {};
+  jobs.forEach(j => {
+    const k = normalizeName(j.customerName);
+    if (k) dupCounts[k] = (dupCounts[k] || 0) + 1;
+  });
+  function dupOf(j) {
+    return dupCounts[normalizeName(j.customerName)] || 1;
+  }
+  function matchesFilter(j) {
+    if (repFilter !== "All reps" && (j.salesRep || "Unassigned") !== repFilter) return false;
+    const q = search.trim().toLowerCase();
+    if (q) {
+      const hay = `${j.id} ${j.customerName} ${j.propertyAddress} ${j.ownerAddress || ""} ${j.salesRep} ${j.phone || ""} ${j.email || ""} ${j.insuranceCarrier || ""} ${j.claimNum || ""}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  }
+  const filtered = activeJobs.filter(matchesFilter).filter(j => !stageFilter || j.stage === stageFilter);
+  const filteredArchive = archivedJobs.filter(matchesFilter);
+  const finRows = jobs.filter(matchesFilter);
+  const finTotals = finRows.reduce((a, r) => ({
+    revenue: a.revenue + (Number(r.contractAmount) || 0),
+    commission: a.commission + calcCommission(r),
+    install: a.install + calcInstallPaid(r),
+    material: a.material + calcMaterialCost(r),
+    netPL: a.netPL + calcNetPL(r)
+  }), {
+    revenue: 0,
+    commission: 0,
+    install: 0,
+    material: 0,
+    netPL: 0
+  });
+  const finMargin = finTotals.revenue > 0 ? finTotals.netPL / finTotals.revenue * 100 : 0;
+  const stageCounts = {};
+  STAGE_ORDER.forEach(s => stageCounts[s] = 0);
+  activeJobs.forEach(j => stageCounts[j.stage] = (stageCounts[j.stage] || 0) + 1);
+  const visibleStages = STAGE_ORDER.filter(s => STAGE_GROUP[s] !== "won" && STAGE_GROUP[s] !== "lost" && (stageCounts[s] > 0 || s === stageFilter));
+  const payroll = reps.filter(r => r !== "All reps").map(rep => {
+    const repJobs = jobs.filter(j => (j.salesRep || "Unassigned") === rep);
+    const activeCount = repJobs.filter(j => !isClosed(j)).length;
+    const commissionEligible = repJobs.filter(j => STAGE_GROUP[j.stage] !== "lost");
+    const commissionEarned = commissionEligible.reduce((s, j) => s + calcCommission(j), 0);
+    const advancesPaid = repJobs.filter(j => j.salesRepAdvancePaid === "Yes").length * ADVANCE_AMOUNT;
+    return {
+      rep,
+      activeCount,
+      commissionEarned,
+      advancesPaid,
+      netOwed: commissionEarned - advancesPaid
+    };
+  }).filter(r => r.activeCount > 0);
+  const staleCount = activeJobs.filter(isStale).length;
+  const scheduledJobs = jobs.filter(j => !isClosed(j)).flatMap(j => {
+    const entries = [];
+    if (j.inspectionDateTime) entries.push({
+      ...j,
+      _dt: new Date(j.inspectionDateTime),
+      _kind: "Insurance"
+    });
+    if (j.gapInspectionDateTime) entries.push({
+      ...j,
+      _dt: new Date(j.gapInspectionDateTime),
+      _kind: "GAP Pre-Inspection"
+    });
+    return entries;
+  }).filter(j => !isNaN(j._dt.getTime())).sort((a, b) => a._dt - b._dt);
+  const todayKey = new Date().toDateString();
+  const tomorrowKey = new Date(Date.now() + 86400000).toDateString();
+  function dayLabel(d) {
+    const key = d.toDateString();
+    if (key === todayKey) return "Today";
+    if (key === tomorrowKey) return "Tomorrow";
+    return d.toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "short",
+      day: "numeric"
+    });
+  }
+  const scheduleGroups = [];
+  scheduledJobs.forEach(j => {
+    const label = dayLabel(j._dt);
+    let group = scheduleGroups.find(g => g.label === label);
+    if (!group) {
+      group = {
+        label,
+        jobs: []
+      };
+      scheduleGroups.push(group);
+    }
+    group.jobs.push(j);
+  });
+  const weekEndCutoff = new Date();
+  weekEndCutoff.setDate(weekEndCutoff.getDate() + 7);
+  weekEndCutoff.setHours(23, 59, 59, 999);
+  const briefingToday = scheduledJobs.filter(j => j._dt.toDateString() === todayKey);
+  const briefingWeek = scheduledJobs.filter(j => j._dt.toDateString() !== todayKey && j._dt <= weekEndCutoff);
+  const briefingLater = scheduledJobs.filter(j => j._dt > weekEndCutoff);
+  const followUpJobs = activeJobs.filter(isStale);
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "flex-end",
+      marginBottom: 16,
+      borderBottom: `3px solid ${RUST}`,
+      paddingBottom: 12,
+      flexWrap: "wrap",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 24,
+      fontWeight: 600
+    }
+  }, "GAP ROOFING ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: RUST
+    }
+  }, "&"), " CONSTRUCTION"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: MUTE,
+      textTransform: "uppercase"
+    }
+  }, "Pipeline CRM · San Antonio, TX")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Tab, {
+    active: view === "kanban",
+    onClick: () => setView("kanban"),
+    label: "Board"
+  }), /*#__PURE__*/React.createElement(Tab, {
+    active: view === "table",
+    onClick: () => setView("table"),
+    label: "Table"
+  }), /*#__PURE__*/React.createElement(Tab, {
+    active: view === "payroll",
+    onClick: () => setView("payroll"),
+    label: "Payroll"
+  }), /*#__PURE__*/React.createElement(Tab, {
+    active: view === "archive",
+    onClick: () => setView("archive"),
+    label: `Archive (${archivedJobs.length})`
+  }), /*#__PURE__*/React.createElement(Tab, {
+    active: view === "financial",
+    onClick: () => setView("financial"),
+    label: "Financial"
+  }), /*#__PURE__*/React.createElement(Tab, {
+    active: view === "briefing",
+    onClick: () => setView("briefing"),
+    label: "📋 Briefing"
+  }), /*#__PURE__*/React.createElement(Tab, {
+    active: view === "settings",
+    onClick: () => setView("settings"),
+    label: "⚙️ Settings"
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowNewJob(true),
+    style: {
+      padding: "7px 12px",
+      borderRadius: 6,
+      border: "none",
+      background: RUST,
+      color: "#fff",
+      cursor: "pointer",
+      marginRight: 6
+    }
+  }, "+ New job"), /*#__PURE__*/React.createElement("button", {
+    onClick: refresh,
+    disabled: refreshing,
+    style: {
+      padding: "7px 12px",
+      borderRadius: 6,
+      border: `1px solid ${LINE}`,
+      background: CARD,
+      color: MUTE,
+      cursor: "pointer",
+      marginRight: 6
+    }
+  }, refreshing ? "⟳ Refreshing..." : "⟳ Refresh"), /*#__PURE__*/React.createElement("button", {
+    onClick: exportBackup,
+    style: {
+      padding: "7px 12px",
+      borderRadius: 6,
+      border: `1px solid ${LINE}`,
+      background: CARD,
+      color: MUTE,
+      cursor: "pointer"
+    }
+  }, "⬇ Backup"))), view !== "payroll" && view !== "schedule" && view !== "briefing" && view !== "settings" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      marginBottom: 16,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement(KPICard, {
+    label: "Active pipeline",
+    value: activeJobs.length
+  }), /*#__PURE__*/React.createElement(KPICard, {
+    label: "Insurance jobs",
+    value: activeJobs.filter(j => j.jobType === "Insurance").length
+  }), /*#__PURE__*/React.createElement(KPICard, {
+    label: "Needs follow-up",
+    value: staleCount,
+    sub: `no activity ${STALE_DAYS}+ days`
+  }), /*#__PURE__*/React.createElement(KPICard, {
+    label: "Archived",
+    value: archivedJobs.length
+  })), view !== "payroll" && view !== "schedule" && view !== "briefing" && view !== "settings" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      marginBottom: 16,
+      flexWrap: "wrap",
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    value: search,
+    onChange: e => setSearch(e.target.value),
+    placeholder: "Search customer, address, ID, carrier...",
+    style: {
+      flex: "1 1 220px",
+      padding: "8px 10px",
+      borderRadius: 6,
+      border: `1px solid ${LINE}`
+    }
+  }), /*#__PURE__*/React.createElement("select", {
+    value: repFilter,
+    onChange: e => setRepFilter(e.target.value),
+    style: {
+      padding: "8px 10px",
+      borderRadius: 6,
+      border: `1px solid ${LINE}`
+    }
+  }, reps.map(r => /*#__PURE__*/React.createElement("option", {
+    key: r,
+    value: r
+  }, r))), stageFilter && /*#__PURE__*/React.createElement("button", {
+    onClick: () => setStageFilter(null),
+    style: {
+      padding: "7px 10px",
+      borderRadius: 6,
+      border: `1px solid ${RUST}`,
+      background: "#FAECE7",
+      color: RUST_DARK,
+      cursor: "pointer"
+    }
+  }, stageFilter, " ✕")), view !== "payroll" && view !== "schedule" && view !== "briefing" && view !== "settings" && search.trim() && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      background: "#FAECE7",
+      border: `1px solid ${RUST}`,
+      borderRadius: 6,
+      padding: "8px 14px",
+      marginBottom: 16,
+      fontSize: 13
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: RUST_DARK,
+      fontWeight: 500
+    }
+  }, view === "archive" ? filteredArchive.length : view === "financial" ? finRows.length : filtered.length, " result", (view === "archive" ? filteredArchive.length : view === "financial" ? finRows.length : filtered.length) === 1 ? "" : "s", " for “", search, "”"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setSearch(""),
+    style: {
+      background: "none",
+      border: "none",
+      color: RUST_DARK,
+      cursor: "pointer",
+      fontSize: 13,
+      textDecoration: "underline"
+    }
+  }, "Clear search")), view === "kanban" && !search.trim() && !stageFilter && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      padding: "14px 16px",
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 14,
+      color: INK,
+      marginBottom: 10
+    }
+  }, "Pipeline funnel"), visibleStages.map(stage => {
+    const c = GROUP_COLORS[STAGE_GROUP[stage]] || GROUP_COLORS.lead;
+    const count = stageCounts[stage] || 0;
+    const maxCount = Math.max(1, ...visibleStages.map(s => stageCounts[s] || 0));
+    const pct = Math.round(count / maxCount * 100);
+    return /*#__PURE__*/React.createElement("div", {
+      key: stage,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        marginBottom: 6
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 150,
+        fontSize: 11.5,
+        color: MUTE,
+        textAlign: "right",
+        flexShrink: 0
+      }
+    }, stage), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        background: "#EEECE4",
+        borderRadius: 4,
+        height: 16,
+        overflow: "hidden"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: `${pct}%`,
+        background: c.dot,
+        height: "100%",
+        borderRadius: 4
+      }
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 24,
+        fontSize: 12,
+        color: INK,
+        fontWeight: 500
+      }
+    }, count));
+  })), view === "kanban" && filtered.length === 0 && search.trim() && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 32,
+      textAlign: "center",
+      color: MUTE,
+      fontSize: 14,
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8
+    }
+  }, "No jobs match “", search, "”. Try a different search term or check the rep filter."), view === "kanban" && !(filtered.length === 0 && search.trim()) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 12,
+      overflowX: "auto"
+    }
+  }, visibleStages.map(stage => {
+    const c = GROUP_COLORS[STAGE_GROUP[stage]] || GROUP_COLORS.lead;
+    const jobsIn = filtered.filter(j => j.stage === stage);
+    return /*#__PURE__*/React.createElement("div", {
+      key: stage,
+      style: {
+        minWidth: 230,
+        flexShrink: 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      onClick: () => setStageFilter(stageFilter === stage ? null : stage),
+      style: {
+        padding: "7px 10px",
+        background: c.bg,
+        borderTop: `3px solid ${c.dot}`,
+        cursor: "pointer",
+        borderRadius: "6px 6px 0 0",
+        fontSize: 12.5,
+        color: c.text
+      }
+    }, stage, " · ", jobsIn.length, search.trim() && jobsIn.length !== stageCounts[stage] ? ` of ${stageCounts[stage]}` : ""), /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: "#EEECE4",
+        padding: 8,
+        minHeight: 60,
+        maxHeight: 520,
+        overflowY: "auto",
+        borderRadius: "0 0 6px 6px"
+      }
+    }, jobsIn.map(j => {
+      const cc = GROUP_COLORS[STAGE_GROUP[j.stage]] || GROUP_COLORS.lead;
+      return /*#__PURE__*/React.createElement("div", {
+        key: j.id,
+        onClick: () => setSelectedJob(j),
+        style: {
+          background: CARD,
+          border: `1px solid ${LINE}`,
+          borderLeft: `3px solid ${cc.dot}`,
+          borderRadius: 8,
+          padding: "10px 12px",
+          marginBottom: 8,
+          cursor: "pointer"
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          justifyContent: "space-between"
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontWeight: 500,
+          fontSize: 13.5
+        }
+      }, j.customerName, " ", dupOf(j) > 1 && "👥", " ", isStale(j) && "⏰", " ", j.estimateSent === "Yes" && "📄"), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 11,
+          color: MUTE
+        }
+      }, j.id)), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 12,
+          color: MUTE,
+          marginTop: 3,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis"
+        }
+      }, j.propertyAddress || "No address"), /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 11.5,
+          color: MUTE,
+          marginTop: 6
+        }
+      }, j.salesRep || "Unassigned"));
+    })));
+  })), view === "table" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      overflowX: "auto"
+    }
+  }, /*#__PURE__*/React.createElement("table", {
+    style: {
+      width: "100%",
+      borderCollapse: "collapse",
+      fontSize: 12.5
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    style: {
+      background: "#EEECE4",
+      textAlign: "left"
+    }
+  }, [["ID", "id"], ["Customer", "customerName"], ["Stage", "stage"], ["Rep", "salesRep"], ["Type", "jobType"], ["Contract", "contractAmount"], ["Updated", "lastUpdated"]].map(([h, key]) => /*#__PURE__*/React.createElement("th", {
+    key: h,
+    onClick: () => toggleSort(key),
+    style: {
+      padding: "8px 12px",
+      fontSize: 11,
+      color: MUTE,
+      textTransform: "uppercase",
+      cursor: "pointer",
+      userSelect: "none"
+    }
+  }, h, sortKey === key ? sortDir === "asc" ? " ▲" : " ▼" : "")))), /*#__PURE__*/React.createElement("tbody", null, [...filtered].sort((a, b) => {
+    if (!sortKey) return 0;
+    let av = a[sortKey],
+      bv = b[sortKey];
+    if (sortKey === "contractAmount") {
+      av = Number(av) || 0;
+      bv = Number(bv) || 0;
+    } else {
+      av = (av || "").toString().toLowerCase();
+      bv = (bv || "").toString().toLowerCase();
+    }
+    if (av < bv) return sortDir === "asc" ? -1 : 1;
+    if (av > bv) return sortDir === "asc" ? 1 : -1;
+    return 0;
+  }).map(j => {
+    const c = GROUP_COLORS[STAGE_GROUP[j.stage]] || GROUP_COLORS.lead;
+    return /*#__PURE__*/React.createElement("tr", {
+      key: j.id,
+      onClick: () => setSelectedJob(j),
+      style: {
+        cursor: "pointer",
+        borderBottom: `1px solid ${LINE}`
+      }
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px",
+        color: MUTE
+      }
+    }, j.id), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px",
+        fontWeight: 500
+      }
+    }, j.customerName, " ", dupOf(j) > 1 && "👥", " ", isStale(j) && "⏰", " ", j.estimateSent === "Yes" && "📄"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        background: c.bg,
+        color: c.text,
+        padding: "2px 8px",
+        borderRadius: 4,
+        fontSize: 11.5
+      }
+    }, j.stage)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, j.salesRep || "Unassigned"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, j.jobType || "—"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, fmtMoney(j.contractAmount)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px",
+        color: MUTE
+      }
+    }, fmtDate(j.lastUpdated)));
+  }))), filtered.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 24,
+      textAlign: "center",
+      color: MUTE,
+      fontSize: 13
+    }
+  }, "No jobs match “", search, "”.")), view === "archive" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      overflowX: "auto"
+    }
+  }, /*#__PURE__*/React.createElement("table", {
+    style: {
+      width: "100%",
+      borderCollapse: "collapse",
+      fontSize: 12.5
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    style: {
+      background: "#EEECE4",
+      textAlign: "left"
+    }
+  }, ["ID", "Customer", "Rep", "Contract", "Financial status"].map(h => /*#__PURE__*/React.createElement("th", {
+    key: h,
+    style: {
+      padding: "8px 12px",
+      fontSize: 11,
+      color: MUTE,
+      textTransform: "uppercase"
+    }
+  }, h)))), /*#__PURE__*/React.createElement("tbody", null, filteredArchive.map(j => {
+    const flags = jobFinancialFlags(j);
+    return /*#__PURE__*/React.createElement("tr", {
+      key: j.id,
+      onClick: () => setSelectedJob(j),
+      style: {
+        cursor: "pointer",
+        borderBottom: `1px solid ${LINE}`
+      }
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px",
+        color: MUTE
+      }
+    }, j.id), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px",
+        fontWeight: 500
+      }
+    }, j.customerName), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, j.salesRep || "Unassigned"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, fmtMoney(j.contractAmount)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, flags.length === 0 ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        background: OK_BG,
+        color: OK_TEXT,
+        padding: "2px 8px",
+        borderRadius: 4
+      }
+    }, "✓ Clear") : /*#__PURE__*/React.createElement("span", {
+      style: {
+        background: DANGER_BG,
+        color: DANGER_TEXT,
+        padding: "2px 8px",
+        borderRadius: 4
+      }
+    }, "⚠ ", flags.length, " issue(s)")));
+  })))), view === "payroll" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      marginBottom: 16,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement(KPICard, {
+    label: "Total commission earned",
+    value: fmtMoney(payroll.reduce((s, r) => s + r.commissionEarned, 0))
+  }), /*#__PURE__*/React.createElement(KPICard, {
+    label: "Advances paid out",
+    value: fmtMoney(payroll.reduce((s, r) => s + r.advancesPaid, 0))
+  }), /*#__PURE__*/React.createElement(KPICard, {
+    label: "Net owed to reps",
+    value: fmtSigned(payroll.reduce((s, r) => s + r.netOwed, 0))
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      overflowX: "auto"
+    }
+  }, /*#__PURE__*/React.createElement("table", {
+    style: {
+      width: "100%",
+      borderCollapse: "collapse",
+      fontSize: 12.5
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    style: {
+      background: "#EEECE4",
+      textAlign: "left"
+    }
+  }, ["Sales rep", "Active jobs", "Commission earned", "Advances paid", "Net owed"].map(h => /*#__PURE__*/React.createElement("th", {
+    key: h,
+    style: {
+      padding: "8px 12px",
+      fontSize: 11,
+      color: MUTE,
+      textTransform: "uppercase"
+    }
+  }, h)))), /*#__PURE__*/React.createElement("tbody", null, payroll.map(r => /*#__PURE__*/React.createElement("tr", {
+    key: r.rep,
+    style: {
+      borderBottom: `1px solid ${LINE}`
+    }
+  }, /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "8px 12px",
+      fontWeight: 500
+    }
+  }, r.rep), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "8px 12px"
+    }
+  }, r.activeCount), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "8px 12px"
+    }
+  }, fmtMoney(r.commissionEarned)), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "8px 12px"
+    }
+  }, fmtMoney(r.advancesPaid)), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "8px 12px",
+      color: r.netOwed < 0 ? DANGER_TEXT : INK,
+      fontWeight: 500
+    }
+  }, fmtSigned(r.netOwed)))))))), view === "financial" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: MUTE,
+      marginBottom: 14
+    }
+  }, "Net P/L = Contract − Commission − Install crew payment − Material cost"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      marginBottom: 16,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement(KPICard, {
+    label: "Revenue",
+    value: fmtMoney(finTotals.revenue)
+  }), /*#__PURE__*/React.createElement(KPICard, {
+    label: "Commissions",
+    value: fmtMoney(finTotals.commission)
+  }), /*#__PURE__*/React.createElement(KPICard, {
+    label: "Installation",
+    value: fmtMoney(finTotals.install)
+  }), /*#__PURE__*/React.createElement(KPICard, {
+    label: "Material",
+    value: fmtMoney(finTotals.material)
+  }), /*#__PURE__*/React.createElement(KPICard, {
+    label: "Net P/L",
+    value: fmtSigned(finTotals.netPL),
+    sub: finTotals.revenue > 0 ? `Margin: ${finMargin.toFixed(1)}%` : undefined
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      overflowX: "auto"
+    }
+  }, /*#__PURE__*/React.createElement("table", {
+    style: {
+      width: "100%",
+      borderCollapse: "collapse",
+      fontSize: 12.5
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    style: {
+      background: "#EEECE4",
+      textAlign: "left"
+    }
+  }, ["ID", "Customer", "Contract", "Commission", "Installation", "Material", "Net P/L"].map(h => /*#__PURE__*/React.createElement("th", {
+    key: h,
+    style: {
+      padding: "8px 12px",
+      fontSize: 11,
+      color: MUTE,
+      textTransform: "uppercase"
+    }
+  }, h)))), /*#__PURE__*/React.createElement("tbody", null, finRows.map(r => {
+    const netPL = calcNetPL(r);
+    return /*#__PURE__*/React.createElement("tr", {
+      key: r.id,
+      onClick: () => setSelectedJob(r),
+      style: {
+        cursor: "pointer",
+        borderBottom: `1px solid ${LINE}`
+      }
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px",
+        color: MUTE
+      }
+    }, r.id), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px",
+        fontWeight: 500
+      }
+    }, r.customerName), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, fmtMoney(r.contractAmount)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, fmtMoney(calcCommission(r))), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, fmtMoney(calcInstallPaid(r))), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, fmtMoney(calcMaterialCost(r))), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px",
+        color: netPL < 0 ? DANGER_TEXT : INK,
+        fontWeight: 500
+      }
+    }, fmtSigned(netPL)));
+  }))))), view === "briefing" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 20,
+      color: INK,
+      marginBottom: 4
+    }
+  }, "Daily Briefing"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: MUTE,
+      marginBottom: 18
+    }
+  }, new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric"
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      marginBottom: 20,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement(KPICard, {
+    label: "Active pipeline",
+    value: activeJobs.length
+  }), /*#__PURE__*/React.createElement(KPICard, {
+    label: "Scheduled today",
+    value: briefingToday.length
+  }), /*#__PURE__*/React.createElement(KPICard, {
+    label: "Scheduled this week",
+    value: briefingWeek.length
+  }), /*#__PURE__*/React.createElement(KPICard, {
+    label: "Needs follow-up",
+    value: followUpJobs.length
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 20
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 16,
+      fontWeight: 500,
+      color: RUST,
+      marginBottom: 8,
+      paddingBottom: 4,
+      borderBottom: `2px solid ${RUST}`
+    }
+  }, "Today · ", briefingToday.length), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      overflow: "hidden"
+    }
+  }, briefingToday.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 16,
+      textAlign: "center",
+      color: MUTE,
+      fontSize: 13
+    }
+  }, "Nothing scheduled today."), briefingToday.map((j, idx) => /*#__PURE__*/React.createElement("div", {
+    key: `${j.id}-${j._kind}`,
+    onClick: () => setSelectedJob(j),
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "10px 14px",
+      cursor: "pointer",
+      borderBottom: idx < briefingToday.length - 1 ? `1px solid ${LINE}` : "none"
+    },
+    onMouseEnter: e => e.currentTarget.style.background = "#FAF9F5",
+    onMouseLeave: e => e.currentTarget.style.background = "transparent"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 15,
+      color: RUST_DARK,
+      minWidth: 80
+    }
+  }, j._dt.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 500,
+      fontSize: 13.5
+    }
+  }, j.customerName, " ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: MUTE,
+      fontWeight: 400
+    }
+  }, j.id)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: MUTE
+    }
+  }, j.propertyAddress || "No address"))), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      padding: "3px 8px",
+      borderRadius: 4,
+      background: j._kind === "GAP Pre-Inspection" ? "#E1F5EE" : "#E6F1FB",
+      color: j._kind === "GAP Pre-Inspection" ? "#085041" : "#0C447C"
+    }
+  }, j._kind))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 20
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 16,
+      fontWeight: 500,
+      color: INK,
+      marginBottom: 8,
+      paddingBottom: 4,
+      borderBottom: `2px solid ${LINE}`
+    }
+  }, "This Week · ", briefingWeek.length), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      overflow: "hidden"
+    }
+  }, briefingWeek.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 16,
+      textAlign: "center",
+      color: MUTE,
+      fontSize: 13
+    }
+  }, "Nothing else scheduled this week."), briefingWeek.map((j, idx) => /*#__PURE__*/React.createElement("div", {
+    key: `${j.id}-${j._kind}`,
+    onClick: () => setSelectedJob(j),
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "10px 14px",
+      cursor: "pointer",
+      borderBottom: idx < briefingWeek.length - 1 ? `1px solid ${LINE}` : "none"
+    },
+    onMouseEnter: e => e.currentTarget.style.background = "#FAF9F5",
+    onMouseLeave: e => e.currentTarget.style.background = "transparent"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 14,
+      color: MUTE,
+      minWidth: 110
+    }
+  }, j._dt.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 500,
+      fontSize: 13.5
+    }
+  }, j.customerName, " ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: MUTE,
+      fontWeight: 400
+    }
+  }, j.id)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: MUTE
+    }
+  }, j.propertyAddress || "No address"))), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      padding: "3px 8px",
+      borderRadius: 4,
+      background: j._kind === "GAP Pre-Inspection" ? "#E1F5EE" : "#E6F1FB",
+      color: j._kind === "GAP Pre-Inspection" ? "#085041" : "#0C447C"
+    }
+  }, j._kind))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 20
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 16,
+      fontWeight: 500,
+      color: INK,
+      marginBottom: 8,
+      paddingBottom: 4,
+      borderBottom: `2px solid ${LINE}`
+    }
+  }, "Later · ", briefingLater.length), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      overflow: "hidden"
+    }
+  }, briefingLater.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 16,
+      textAlign: "center",
+      color: MUTE,
+      fontSize: 13
+    }
+  }, "Nothing scheduled beyond this week."), briefingLater.map((j, idx) => /*#__PURE__*/React.createElement("div", {
+    key: `${j.id}-${j._kind}`,
+    onClick: () => setSelectedJob(j),
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "10px 14px",
+      cursor: "pointer",
+      borderBottom: idx < briefingLater.length - 1 ? `1px solid ${LINE}` : "none"
+    },
+    onMouseEnter: e => e.currentTarget.style.background = "#FAF9F5",
+    onMouseLeave: e => e.currentTarget.style.background = "transparent"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 14,
+      color: MUTE,
+      minWidth: 110
+    }
+  }, j._dt.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 500,
+      fontSize: 13.5
+    }
+  }, j.customerName, " ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: MUTE,
+      fontWeight: 400
+    }
+  }, j.id)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: MUTE
+    }
+  }, j.propertyAddress || "No address"))), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      padding: "3px 8px",
+      borderRadius: 4,
+      background: j._kind === "GAP Pre-Inspection" ? "#E1F5EE" : "#E6F1FB",
+      color: j._kind === "GAP Pre-Inspection" ? "#085041" : "#0C447C"
+    }
+  }, j._kind))))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 16,
+      fontWeight: 500,
+      color: INK,
+      marginBottom: 8,
+      paddingBottom: 4,
+      borderBottom: `2px solid ${LINE}`
+    }
+  }, "Needs Follow-up (", STALE_DAYS, "+ days) · ", followUpJobs.length), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      overflow: "hidden"
+    }
+  }, followUpJobs.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 16,
+      textAlign: "center",
+      color: MUTE,
+      fontSize: 13
+    }
+  }, "Nothing stale right now."), followUpJobs.map((j, idx) => /*#__PURE__*/React.createElement("div", {
+    key: j.id,
+    onClick: () => setSelectedJob(j),
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "10px 14px",
+      cursor: "pointer",
+      borderBottom: idx < followUpJobs.length - 1 ? `1px solid ${LINE}` : "none"
+    },
+    onMouseEnter: e => e.currentTarget.style.background = "#FAF9F5",
+    onMouseLeave: e => e.currentTarget.style.background = "transparent"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 500,
+      fontSize: 13.5
+    }
+  }, j.customerName, " ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: MUTE,
+      fontWeight: 400
+    }
+  }, j.id)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: MUTE
+    }
+  }, j.stage)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: MUTE
+    }
+  }, j.salesRep || "Unassigned")))))), view === "settings" && /*#__PURE__*/React.createElement(SettingsPanel, {
+    recipients: recipients,
+    loading: recipLoading,
+    onAdd: addRecipient,
+    onRemove: removeRecipient,
+    onToggle: toggleRecipient
+  }), /*#__PURE__*/React.createElement(DetailModal, {
+    job: selectedJob,
+    onClose: () => setSelectedJob(null),
+    onSave: saveJob,
+    onDelete: deleteJob
+  }), showNewJob && /*#__PURE__*/React.createElement(NewJobModal, {
+    onClose: () => setShowNewJob(false),
+    onCreate: createJob
+  }));
+}
+ReactDOM.createRoot(document.getElementById('root')).render(/*#__PURE__*/React.createElement(App, null));
+</script>
+</body>
+</html>
