@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GAP CRM — Job Financials</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,sans-serif;background:#F6F4EF;color:#242220}.wrap{max-width:1120px;margin:0 auto;padding:22px}.top{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #B5451C;padding-bottom:12px;margin-bottom:18px;gap:12px;flex-wrap:wrap}.brand{font-family:Oswald,sans-serif;font-size:24px;font-weight:600}.brand span{color:#B5451C}.sub{font-size:12px;color:#6F6C63;text-transform:uppercase}.card{background:#fff;border:1px solid #DEDBD1;border-radius:10px;padding:18px;margin-bottom:16px}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}.field{flex:1 1 180px}.field label{display:block;font-size:10.5px;text-transform:uppercase;color:#6F6C63;margin-bottom:4px}.field input,.field select{width:100%;padding:8px 10px;border:1px solid #DEDBD1;border-radius:6px;font-family:inherit}.section-title{font-family:Oswald,sans-serif;font-size:17px;margin-bottom:12px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}.metric{background:#FAF9F5;border:1px solid #EEECE4;border-radius:8px;padding:12px}.metric .label{font-size:10.5px;text-transform:uppercase;color:#6F6C63}.metric .value{font-family:Oswald,sans-serif;font-size:22px;margin-top:4px}.good{color:#27500A}.warn{color:#7A2D11}.btn{border:none;border-radius:6px;padding:9px 15px;cursor:pointer;font-weight:600}.primary{background:#B5451C;color:#fff}.secondary{background:#fff;border:1px solid #DEDBD1;color:#242220}.status{font-size:12px;color:#6F6C63;margin-left:8px}.note{font-size:12px;color:#6F6C63;line-height:1.5}.hidden{display:none}@media(max-width:650px){.wrap{padding:12px}.metric .value{font-size:19px}}
+</style>
+</head>
+<body><div class="wrap">
+<div class="top"><div><div class="brand">GAP ROOFING <span>&</span> CONSTRUCTION</div><div class="sub">Job Financials / Profitability</div></div><button class="btn secondary" onclick="location.href='index.html'">← Back to CRM</button></div>
+<div id="configCard" class="card hidden"><div class="section-title">Connect CRM</div><div class="row"><div class="field"><label>Apps Script URL</label><input id="cfgUrl"></div><div class="field"><label>Token</label><input id="cfgToken"></div><button class="btn primary" onclick="saveConfig()">Save & Connect</button></div></div>
+<div class="card"><div class="row"><div class="field" style="flex:3 1 320px"><label>Select job</label><select id="jobSelect"><option>Loading jobs…</option></select></div><button class="btn secondary" onclick="loadJobs()">Refresh</button></div><div id="jobMeta" class="note" style="margin-top:10px"></div></div>
+<div id="workspace" class="hidden">
+<div class="card"><div class="section-title">Insurance Financials</div><div class="row">
+<div class="field"><label>RCV / Total approved</label><input data-f="rcv" type="number" step="0.01"></div>
+<div class="field"><label>ACV</label><input data-f="acv" type="number" step="0.01"></div>
+<div class="field"><label>Deductible</label><input data-f="deductible" type="number" step="0.01"></div>
+<div class="field"><label>Recoverable depreciation</label><input data-f="recoverableDepreciation" type="number" step="0.01"></div>
+<div class="field"><label>Approved supplements</label><input data-f="approvedSupplements" type="number" step="0.01"></div>
+<div class="field"><label>Insurance expected</label><input data-f="insuranceExpected" type="number" step="0.01"></div>
+</div></div>
+<div class="card"><div class="section-title">Money Received</div><div class="row">
+<div class="field"><label>First insurance payment</label><input data-f="firstInsurancePayment" type="number" step="0.01"></div>
+<div class="field"><label>Depreciation received</label><input data-f="depreciationReceived" type="number" step="0.01"></div>
+<div class="field"><label>Supplement payments received</label><input data-f="supplementPaymentsReceived" type="number" step="0.01"></div>
+<div class="field"><label>Deductible collected</label><input data-f="deductibleCollected" type="number" step="0.01"></div>
+</div></div>
+<div class="card"><div class="section-title">Job Costs</div><div class="row">
+<div class="field"><label>Materials</label><input data-f="materialCost" type="number" step="0.01"></div>
+<div class="field"><label>Roof labor</label><input data-f="roofLabor" type="number" step="0.01"></div>
+<div class="field"><label>Interior labor</label><input data-f="interiorLabor" type="number" step="0.01"></div>
+<div class="field"><label>Dump / disposal</label><input data-f="dumpDisposal" type="number" step="0.01"></div>
+<div class="field"><label>Permits</label><input data-f="permits" type="number" step="0.01"></div>
+<div class="field"><label>Delivery</label><input data-f="delivery" type="number" step="0.01"></div>
+<div class="field"><label>Other costs</label><input data-f="otherCosts" type="number" step="0.01"></div>
+<div class="field"><label>Sales commission rate</label><input data-f="commissionRate" type="number" step="0.01" placeholder="0.10"></div>
+</div><div class="note" style="margin-top:10px">Commission is calculated from insurance expected, not the customer deductible. Enter 0.10 for 10%.</div></div>
+<div class="card"><div class="section-title">Profitability</div><div id="metrics" class="grid"></div></div>
+<div class="card"><button id="saveBtn" class="btn primary" onclick="saveCurrent()">Save Financials</button><span id="status" class="status"></span></div>
+</div>
+</div>
+<script src="job-profitability.js"></script>
+<script>
+const FIELDS=['rcv','acv','deductible','recoverableDepreciation','approvedSupplements','insuranceExpected','firstInsurancePayment','depreciationReceived','supplementPaymentsReceived','deductibleCollected','materialCost','roofLabor','interiorLabor','dumpDisposal','permits','delivery','otherCosts','commissionRate'];
+let jobs=[],current=null;
+function cfg(){return{url:localStorage.getItem('crm_api_url')||'',token:localStorage.getItem('crm_api_token')||''}}
+function saveConfig(){localStorage.setItem('crm_api_url',document.getElementById('cfgUrl').value.trim());localStorage.setItem('crm_api_token',document.getElementById('cfgToken').value.trim());location.reload()}
+async function api(action,body){const c=cfg();if(!c.url)throw new Error('CRM not configured');if(body){const r=await fetch(c.url,{method:'POST',cache:'no-store',body:JSON.stringify({action,token:c.token,...body})});return r.json()}const q=new URLSearchParams({action,token:c.token,_t:Date.now()});const r=await fetch(c.url+'?'+q.toString(),{cache:'no-store'});return r.json()}
+function money(n){return '$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+async function loadJobs(){try{const c=cfg();if(!c.url||!c.token){document.getElementById('configCard').classList.remove('hidden');document.getElementById('cfgUrl').value=c.url;document.getElementById('cfgToken').value=c.token;return}const r=await api('jobs');jobs=r.jobs||[];const sel=document.getElementById('jobSelect');sel.innerHTML='<option value="">Choose a job…</option>'+jobs.slice().sort((a,b)=>(a.customerName||'').localeCompare(b.customerName||'')).map(j=>`<option value="${j.id}">${j.customerName||'Unnamed'} · ${j.id}</option>`).join('');sel.onchange=()=>selectJob(sel.value)}catch(e){document.getElementById('jobMeta').textContent='Could not load jobs: '+e.message}}
+function selectJob(id){current=jobs.find(j=>j.id===id)||null;if(!current){document.getElementById('workspace').classList.add('hidden');return}document.getElementById('workspace').classList.remove('hidden');document.getElementById('jobMeta').textContent=`${current.customerName} · ${current.propertyAddress||'No address'} · ${current.insuranceCarrier||current.jobType||''}`;FIELDS.forEach(f=>{const el=document.querySelector(`[data-f="${f}"]`);let v=current[f];if(f==='commissionRate'&&(v==null||v===''))v=0.10;el.value=v==null?'':v;el.oninput=render});render()}
+function formData(){const x={...current};FIELDS.forEach(f=>{const el=document.querySelector(`[data-f="${f}"]`);x[f]=el.value===''?0:Number(el.value)});return x}
+function render(){if(!current)return;const x=formData();const r=GAPProfitability.calculate(x);const metrics=[['Total Job Value',r.totalJobValue],['Insurance Expected',r.insuranceExpected],['Insurance Received',r.insuranceReceived],['Insurance Balance',r.insuranceBalance],['Sales Commission',r.salesCommission],['Total Costs',r.totalCosts],['Projected Profit',r.projectedProfit,'good'],['Projected Margin',r.projectedMarginPct.toFixed(1)+'%','good'],['Final Profit (collected)',r.finalProfit,r.finalProfit<0?'warn':'good']];document.getElementById('metrics').innerHTML=metrics.map(m=>`<div class="metric"><div class="label">${m[0]}</div><div class="value ${m[2]||''}">${typeof m[1]==='number'?money(m[1]):m[1]}</div></div>`).join('')}
+async function saveCurrent(){if(!current)return;const patch={};FIELDS.forEach(f=>{const el=document.querySelector(`[data-f="${f}"]`);patch[f]=el.value===''?null:Number(el.value)});document.getElementById('status').textContent='Saving…';document.getElementById('saveBtn').disabled=true;try{const r=await api('updateJob',{id:current.id,patch});if(r&&r.error)throw new Error(r.error);current={...current,...patch};const idx=jobs.findIndex(j=>j.id===current.id);if(idx>=0)jobs[idx]=current;document.getElementById('status').textContent='Saved ✓'}catch(e){document.getElementById('status').textContent='Save failed: '+e.message}finally{document.getElementById('saveBtn').disabled=false}}
+loadJobs();
+</script>
+</body></html>
