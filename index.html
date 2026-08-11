@@ -365,6 +365,8 @@ function buildMaterialOrderHTML(job, order) {
   const chimneysVal = o.chimneys || 0;
   const skylightsVal = o.skylights || 0;
   const sidewallVal = o.sidewall || 0;
+  const deckPctVal = o.deckPct != null ? o.deckPct : 10;
+  const soffitVal = o.soffitVents || 0;
   const jobDataJson = JSON.stringify({
     id: job.id,
     customerName: job.customerName,
@@ -471,6 +473,12 @@ function buildMaterialOrderHTML(job, order) {
       <div class="field"><label>Sidewall length (linear ft)</label><input type="number" id="sidewall" value="${sidewallVal}" min="0">
         <div class="hint">Roof-to-wall intersections (step flashing)</div>
       </div>
+      <div class="field"><label>Decking replacement (%)</label><input type="number" id="deckPct" value="${deckPctVal}" min="0" max="100">
+        <div class="hint">Estimated % of deck needing new OSB sheathing</div>
+      </div>
+      <div class="field"><label>Soffit / turbine vents</label><input type="number" id="soffitVents" value="${soffitVal}" min="0">
+        <div class="hint">In addition to ridge vent</div>
+      </div>
     </div>
   </div>
 
@@ -478,12 +486,13 @@ function buildMaterialOrderHTML(job, order) {
     <div><div class="label">Roof size</div><div class="big" id="sumSquares">${squaresVal} sq</div></div>
     <div><div class="label">Shape</div><div class="big" id="sumShape">&mdash;</div></div>
     <div><div class="label">Waste applied</div><div class="big" id="sumWaste">&mdash;</div></div>
+    <div><div class="label">Estimated total</div><div class="big" id="sumTotal">&mdash;</div></div>
   </div>
 
   <div class="section">
     <h3>Material order list</h3>
     <table>
-      <thead><tr><th>Material</th><th>Unit</th><th class="num">Order qty</th><th>Notes</th></tr></thead>
+      <thead><tr><th>Material</th><th>Unit</th><th class="num">Order qty</th><th class="num">Unit price</th><th class="num">Line total</th><th>Notes</th></tr></thead>
       <tbody id="resultsBody"></tbody>
     </table>
     <div class="footnote">Rule-of-thumb quantities for a standard asphalt shingle roof, scaled by shape. Always confirm against an actual measurement before ordering.</div>
@@ -492,6 +501,7 @@ function buildMaterialOrderHTML(job, order) {
   <div class="btns noprint">
     <button class="btn btn-accent" id="saveBtn">Save order to job</button>
     <button class="btn btn-outline" onclick="window.print()">Print</button>
+    <button class="btn btn-outline" onclick="window.close()">Cancel / Close</button>
     <span id="saveStatus"></span>
   </div>
 </div>
@@ -502,6 +512,29 @@ const SHAPES = {
   hip:        { name:"Hip Roof",         desc:"Slopes on all sides, no valleys",      waste:12, ridgeFt:0.30, hipFt:0.50, valleyFt:0,    eaveFt:1.30, rakeFt:0    },
   gableValley:{ name:"Gable + Valleys",  desc:"L-shape, addition, or dormers",        waste:15, ridgeFt:0.35, hipFt:0,    valleyFt:0.30, eaveFt:1.00, rakeFt:0.50 },
   complex:    { name:"Complex / Cut-up", desc:"Hips, valleys & multiple dormers",     waste:20, ridgeFt:0.25, hipFt:0.30, valleyFt:0.40, eaveFt:1.20, rakeFt:0.30 }
+};
+// Default unit prices, from recent Lowe's receipts. Editable per order in
+// the table below \u2014 update here to change the defaults for future orders.
+const PRICES = {
+  "OSB roof sheathing (7/16in)": 20.69,
+  "Deck nails/screws (ring-shank)": 12.00,
+  "H-clips (panel edge clips)": 0.19,
+  "Architectural shingles": 38.99,
+  "Starter strip shingles": 58.46,
+  "Ridge cap shingles": 10.62,
+  "Synthetic underlayment": 63.63,
+  "Underlayment cap nails": 20.79,
+  "Ice & water shield": 102.34,
+  "Drip edge": 10.42,
+  "Valley metal (W-valley)": 10.42,
+  "Step flashing": 45.72,
+  "Ridge vent": 9.50,
+  "Soffit / turbine vent": 29.98,
+  "Roofing nails (coil/box)": 35.99,
+  "Roofing/flashing cement": 14.05,
+  "Pipe boots": 29.98,
+  "Chimney flashing kit": 45.72,
+  "Skylight flashing kit": 45.72
 };
 let selectedShape = ${JSON.stringify(shapeVal)};
 const JOB = ${jobDataJson};
@@ -521,6 +554,15 @@ function buildShapeGrid(){
 function roundUp(n, step) { step = step || 1; return Math.ceil(n / step) * step; }
 
 let lastRows = [];
+let priceOverrides = {};
+function fmtMoney(n) { return "$" + n.toFixed(2); }
+function updateGrandTotal() {
+  let total = 0;
+  document.querySelectorAll("#resultsBody tr[data-material]").forEach(tr => {
+    total += parseFloat(tr.dataset.lineTotal) || 0;
+  });
+  document.getElementById("sumTotal").textContent = fmtMoney(total);
+}
 function calculate(){
   const squares = parseFloat(document.getElementById("squares").value) || 0;
   const shape = SHAPES[selectedShape];
@@ -539,19 +581,31 @@ function calculate(){
   const chimneys = parseInt(document.getElementById("chimneys").value) || 0;
   const skylights = parseInt(document.getElementById("skylights").value) || 0;
   const sidewall = parseFloat(document.getElementById("sidewall").value) || 0;
+  const deckPct = parseFloat(document.getElementById("deckPct").value) || 0;
+  const soffitVents = parseInt(document.getElementById("soffitVents").value) || 0;
+  const deckSheets = roundUp(squares * 3.125 * (deckPct / 100));
 
   const rows = [];
+  if (deckPct > 0) {
+    rows.push({group:"Decking & Substrate"});
+    rows.push(["OSB roof sheathing (7/16in)", "sheet (4x8)", deckSheets, deckPct + "% of roof \u2014 32 sq ft/sheet"]);
+    rows.push(["Deck nails/screws (ring-shank)", "5 lb box", roundUp(deckSheets / 20) || (deckSheets > 0 ? 1 : 0), "~20 sheets/box"]);
+    rows.push(["H-clips (panel edge clips)", "each", deckSheets * 8, "8 clips/sheet, unsupported edges"]);
+  }
   rows.push({group:"Shingles & Underlayment"});
   rows.push(["Architectural shingles", "bundle", roundUp(squares * 3 * wasteMult), "3 bundles/square"]);
   rows.push(["Starter strip shingles", "bundle", roundUp((eaveFt / 120) * wasteMult), "Along eaves, ~120 ft/bundle"]);
   rows.push(["Ridge cap shingles", "bundle", roundUp((ridgeHipFt / 33) * wasteMult), "Ridge + hip length, ~33 ft/bundle"]);
   rows.push(["Synthetic underlayment", "roll", roundUp((squares / 10) * wasteMult), "~10 squares/roll"]);
+  rows.push(["Underlayment cap nails", "box (2500)", roundUp(squares / 15) || 1, "For synthetic underlayment"]);
   rows.push(["Ice & water shield", "roll", roundUp(((eaveFt + valleyFt * 2) / 66) * wasteMult), "Eaves + valleys, 3 ft wide roll"]);
   rows.push({group:"Flashing & Edging"});
   rows.push(["Drip edge", "10 ft piece", roundUp((perimeterFt / 10) * wasteMult), "Eaves + rakes"]);
-  rows.push(["Ridge vent", "4 ft section", roundUp(ridgeFt / 4), "Along ridge only"]);
   if (valleyFt > 0) rows.push(["Valley metal (W-valley)", "10 ft piece", roundUp((valleyFt / 10) * wasteMult), "Open valleys"]);
   if (sidewall > 0) rows.push(["Step flashing", "bundle", roundUp(sidewall / 25), "1 bundle \u2248 25 linear ft of sidewall"]);
+  rows.push({group:"Ventilation"});
+  rows.push(["Ridge vent", "4 ft section", roundUp(ridgeFt / 4), "Along ridge only"]);
+  if (soffitVents > 0) rows.push(["Soffit / turbine vent", "each", soffitVents, "Intake ventilation"]);
   rows.push({group:"Fasteners & Sealant"});
   rows.push(["Roofing nails (coil/box)", "50 lb box", roundUp(squares / 13, 1) || 1, "Ring-shank, ~13 squares/box"]);
   rows.push(["Roofing/flashing cement", "10.3 oz tube", roundUp(squares / 2) || 1, "Detail & flashing seal"]);
@@ -561,23 +615,46 @@ function calculate(){
   if (skylights > 0) penetrationRows.push(["Skylight flashing kit", "each", skylights, "Match to model"]);
   if (penetrationRows.length){ rows.push({group:"Penetrations"}); penetrationRows.forEach(r => rows.push(r)); }
 
-  const tbody = document.getElementById("resultsBody");
-  tbody.innerHTML = "";
-  rows.forEach(r => {
-    if (r.group){
-      const tr = document.createElement("tr"); tr.className = "group-row";
-      tr.innerHTML = '<td colspan="4">' + r.group + '</td>'; tbody.appendChild(tr); return;
-    }
-    const [material, unit, qty, notes] = r;
-    const tr = document.createElement("tr");
-    tr.innerHTML = '<td class="material">' + material + '</td><td class="unit">' + unit + '</td><td class="num qty">' + qty + '</td><td class="notes">' + notes + '</td>';
-    tbody.appendChild(tr);
+const tbody = document.getElementById("resultsBody");
+tbody.innerHTML = "";
+rows.forEach(r => {
+  if (r.group){
+    const tr = document.createElement("tr"); tr.className = "group-row";
+    tr.innerHTML = '<td colspan="6">' + r.group + '</td>'; tbody.appendChild(tr); return;
+  }
+  const [material, unit, qty, notes] = r;
+  const price = priceOverrides.hasOwnProperty(material) ? priceOverrides[material] : (PRICES[material] || 0);
+  const lineTotal = qty * price;
+  const tr = document.createElement("tr");
+  tr.dataset.material = material;
+  tr.dataset.qty = qty;
+  tr.dataset.lineTotal = lineTotal;
+  tr.innerHTML = '<td class="material">' + material + '</td>' +
+    '<td class="unit">' + unit + '</td>' +
+    '<td class="num qty">' + qty + '</td>' +
+    '<td class="num"><input type="number" class="priceInput" min="0" step="0.01" value="' + price.toFixed(2) + '" style="width:75px; text-align:right; padding:4px 6px; font-size:12.5px;"></td>' +
+    '<td class="num lineTotalCell">' + fmtMoney(lineTotal) + '</td>' +
+    '<td class="notes">' + notes + '</td>';
+  const priceInput = tr.querySelector(".priceInput");
+  priceInput.addEventListener("input", () => {
+    const newPrice = parseFloat(priceInput.value) || 0;
+    priceOverrides[material] = newPrice;
+    const newLineTotal = qty * newPrice;
+    tr.dataset.lineTotal = newLineTotal;
+    tr.querySelector(".lineTotalCell").textContent = fmtMoney(newLineTotal);
+    updateGrandTotal();
   });
-  lastRows = rows.filter(r => !r.group).map(r => ({ material: r[0], unit: r[1], qty: r[2], notes: r[3] }));
-  return { squares, shapeName: shape.name, wastePct };
+  tbody.appendChild(tr);
+});
+updateGrandTotal();
+lastRows = rows.filter(r => !r.group).map(r => {
+  const price = priceOverrides.hasOwnProperty(r[0]) ? priceOverrides[r[0]] : (PRICES[r[0]] || 0);
+  return { material: r[0], unit: r[1], qty: r[2], notes: r[3], unitPrice: price, lineTotal: r[2] * price };
+});
+return { squares, shapeName: shape.name, wastePct };
 }
 
-["squares","waste","pipeBoots","chimneys","skylights","sidewall"].forEach(id => {
+["squares","waste","pipeBoots","chimneys","skylights","sidewall","deckPct","soffitVents"].forEach(id => {
   document.getElementById(id).addEventListener("input", calculate);
 });
 
@@ -593,6 +670,8 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
     chimneys: parseInt(document.getElementById("chimneys").value) || 0,
     skylights: parseInt(document.getElementById("skylights").value) || 0,
     sidewall: parseFloat(document.getElementById("sidewall").value) || 0,
+    deckPct: parseFloat(document.getElementById("deckPct").value) || 0,
+    soffitVents: parseInt(document.getElementById("soffitVents").value) || 0,
     materials: lastRows
   };
   statusEl.textContent = "Saving...";
@@ -610,24 +689,38 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
 
 buildShapeGrid();
 calculate();
+
+async function loadExisting() {
+  try {
+    const q = new URLSearchParams({ action: "materialOrder", token: CFG2.token, jobId: JOB.id, _t: Date.now() });
+    const res = await fetch(CFG2.url + "?" + q.toString(), { cache: "no-store" });
+    const data = await res.json();
+    const o = data && data.order;
+    if (!o) return;
+    document.getElementById("squares").value = o.squares || 25;
+    document.getElementById("waste").value = (o.wastePct != null && o.wastePct !== "") ? o.wastePct : "";
+    document.getElementById("pipeBoots").value = o.pipeBoots || 0;
+    document.getElementById("chimneys").value = o.chimneys || 0;
+    document.getElementById("skylights").value = o.skylights || 0;
+    document.getElementById("sidewall").value = o.sidewall || 0;
+    document.getElementById("deckPct").value = o.deckPct != null ? o.deckPct : 10;
+    document.getElementById("soffitVents").value = o.soffitVents || 0;
+    if (SHAPES[o.shape]) { selectedShape = o.shape; buildShapeGrid(); }
+    if (o.materials && o.materials.length) {
+      o.materials.forEach(m => { if (m.unitPrice != null) priceOverrides[m.material] = m.unitPrice; });
+    }
+    calculate();
+    document.getElementById("saveStatus").textContent = "Loaded last saved order (" + (o.savedAt || "") + ")";
+  } catch (err) { /* no existing order yet, leave defaults */ }
+}
+loadExisting();
 <\/script>
 </body></html>`;
 }
-async function openMaterialOrder(job) {
+function openMaterialOrder(job) {
+  const html = buildMaterialOrderHTML(job, null);
   const win = window.open("", "_blank");
   if (win) {
-    win.document.write("<p style='font-family:sans-serif;padding:40px;color:#666;'>Loading...</p>");
-  }
-  let existing = null;
-  try {
-    const res = await api("materialOrder", {
-      jobId: job.id
-    });
-    existing = res && res.order ? res.order : null;
-  } catch (err) {/* proceed with blank order */}
-  const html = buildMaterialOrderHTML(job, existing);
-  if (win) {
-    win.document.open();
     win.document.write(html);
     win.document.close();
   }
