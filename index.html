@@ -351,6 +351,287 @@ function openEstimate(job, kind) {
     win.document.close();
   }
 }
+function buildMaterialOrderHTML(job, order) {
+  const today = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric"
+  });
+  const o = order || {};
+  const squaresVal = o.squares || 25;
+  const wasteVal = o.wastePct != null && o.wastePct !== "" ? o.wastePct : "";
+  const shapeVal = o.shape || "gable";
+  const pipeBootsVal = o.pipeBoots || 0;
+  const chimneysVal = o.chimneys || 0;
+  const skylightsVal = o.skylights || 0;
+  const sidewallVal = o.sidewall || 0;
+  const jobDataJson = JSON.stringify({
+    id: job.id,
+    customerName: job.customerName,
+    propertyAddress: job.propertyAddress
+  });
+  const cfgJson = JSON.stringify({
+    url: CFG.url,
+    token: CFG.token
+  });
+  return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Material Order - ${escapeHtml(job.customerName)}</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Inter', sans-serif; background: #F6F4EF; color: #242220; margin: 0; padding: 24px; }
+  .sheet { max-width: 800px; margin: 0 auto; background: #fff; border: 1px solid #DEDBD1; border-radius: 8px; padding: 32px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #B5451C; padding-bottom: 14px; margin-bottom: 20px; }
+  .company { font-family: 'Oswald', sans-serif; font-size: 22px; font-weight: 600; }
+  .company span { color: #B5451C; }
+  .sub { font-size: 12px; color: #6F6C63; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+  .title { font-family: 'Oswald', sans-serif; font-size: 19px; font-weight: 500; color: #B5451C; text-align: right; }
+  .meta { font-size: 12px; color: #6F6C63; text-align: right; margin-top: 4px; }
+  .infoGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; margin-bottom: 22px; font-size: 13.5px; }
+  .infoGrid div b { color: #6F6C63; font-weight: 500; font-size: 11px; text-transform: uppercase; display: block; margin-bottom: 2px; }
+  .section { margin-bottom: 22px; }
+  .section h3 { font-family: 'Oswald', sans-serif; font-size: 14px; font-weight: 500; color: #242220; margin: 0 0 10px; border-bottom: 1px solid #EBE8DF; padding-bottom: 6px; }
+  label { display: block; font-size: 10.5px; font-weight: 600; color: #6F6C63; letter-spacing: .03em; text-transform: uppercase; margin-bottom: 5px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .field { flex: 1 1 160px; margin-bottom: 12px; }
+  input[type=number], select { width: 100%; padding: 8px 10px; font-size: 14px; border: 1.3px solid #DEDBD1; border-radius: 4px; background: #fff; color: #242220; font-family: inherit; }
+  input:focus, select:focus { outline: 2px solid #B5451C; outline-offset: 1px; }
+  .hint { font-size: 10.5px; color: #9A9587; margin-top: 4px; }
+  .shape-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; margin-top: 4px; }
+  .shape-opt { border: 1.3px solid #DEDBD1; border-radius: 4px; padding: 8px 10px; cursor: pointer; background: #fff; }
+  .shape-opt.active { border-color: #B5451C; background: #FAECE7; }
+  .shape-opt .name { font-weight: 600; font-size: 12.5px; }
+  .shape-opt .desc { font-size: 10.5px; color: #9A9587; margin-top: 2px; }
+  .fixed-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #6F6C63; padding: 7px 6px; border-bottom: 2px solid #242220; }
+  th.num, td.num { text-align: right; }
+  td { padding: 8px 6px; border-bottom: 1px solid #EBE8DF; vertical-align: top; }
+  tr.group-row td { background: #FAF8F2; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #6F6C63; }
+  td.material { font-weight: 600; }
+  td.unit, td.notes { color: #9A9587; font-size: 11.5px; }
+  td.qty { font-weight: 700; font-size: 13.5px; color: #B5451C; white-space: nowrap; }
+  .summary-bar { display: flex; justify-content: space-between; align-items: center; background: #242220; color: #F6F4EF; padding: 12px 16px; border-radius: 6px; margin-bottom: 18px; flex-wrap: wrap; gap: 8px; }
+  .summary-bar .big { font-size: 18px; font-weight: 700; }
+  .summary-bar .label { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #B9B5A8; }
+  .footnote { font-size: 10.5px; color: #9A9587; margin-bottom: 14px; line-height: 1.6; }
+  .ai-note { font-size: 12px; color: #54524A; background: #FAF8F2; border-left: 3px solid #B5451C; padding: 8px 10px; margin-bottom: 18px; border-radius: 4px; }
+  .btns { display: flex; gap: 8px; align-items: center; }
+  button.btn { border: none; padding: 9px 16px; font-size: 12.5px; font-weight: 600; border-radius: 5px; cursor: pointer; }
+  .btn-accent { background: #B5451C; color: #fff; }
+  .btn-outline { background: #fff; border: 1.3px solid #242220; color: #242220; }
+  #saveStatus { font-size: 11.5px; color: #9A9587; }
+  @media print { .noprint { display: none; } body { background: #fff; padding: 0; } .sheet { border: none; padding: 0; } }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <div class="header">
+    <div>
+      <div class="company">GAP <span>ROOFING</span> & CONSTRUCTION</div>
+      <div class="sub">Material Order</div>
+    </div>
+    <div>
+      <div class="title">Material Order</div>
+      <div class="meta">${today} &middot; Job ${escapeHtml(job.id)}</div>
+    </div>
+  </div>
+
+  <div class="infoGrid">
+    <div><b>Customer</b>${escapeHtml(job.customerName || "")}</div>
+    <div><b>Property Address</b>${escapeHtml(job.propertyAddress || "")}</div>
+  </div>
+
+  <div class="ai-note noprint">Have a drone photo? Upload it to Claude (claude.ai) and ask it to identify the roof shape, chimneys, skylights, and pipe boots — then enter those values below. A photo alone has no scale reference, so roof size (squares) always needs your measurement.</div>
+
+  <div class="section">
+    <h3>Roof size & shape</h3>
+    <div class="row">
+      <div class="field">
+        <label>Roof size (squares)</label>
+        <input type="number" id="squares" value="${squaresVal}" min="0" step="0.5">
+        <div class="hint">1 square = 100 sq ft</div>
+      </div>
+      <div class="field">
+        <label>Waste factor override</label>
+        <input type="number" id="waste" value="${wasteVal}" placeholder="auto by shape" min="0" max="50" step="1">
+        <div class="hint">Leave blank to use the shape's default %</div>
+      </div>
+    </div>
+    <label style="margin-top:10px;">Roof shape</label>
+    <div class="shape-grid" id="shapeGrid"></div>
+  </div>
+
+  <div class="section">
+    <h3>Site-verified details</h3>
+    <div class="fixed-grid">
+      <div class="field"><label>Plumbing vent stacks</label><input type="number" id="pipeBoots" value="${pipeBootsVal}" min="0"></div>
+      <div class="field"><label>Chimneys</label><input type="number" id="chimneys" value="${chimneysVal}" min="0"></div>
+      <div class="field"><label>Skylights</label><input type="number" id="skylights" value="${skylightsVal}" min="0"></div>
+      <div class="field"><label>Sidewall length (linear ft)</label><input type="number" id="sidewall" value="${sidewallVal}" min="0">
+        <div class="hint">Roof-to-wall intersections (step flashing)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="summary-bar">
+    <div><div class="label">Roof size</div><div class="big" id="sumSquares">${squaresVal} sq</div></div>
+    <div><div class="label">Shape</div><div class="big" id="sumShape">&mdash;</div></div>
+    <div><div class="label">Waste applied</div><div class="big" id="sumWaste">&mdash;</div></div>
+  </div>
+
+  <div class="section">
+    <h3>Material order list</h3>
+    <table>
+      <thead><tr><th>Material</th><th>Unit</th><th class="num">Order qty</th><th>Notes</th></tr></thead>
+      <tbody id="resultsBody"></tbody>
+    </table>
+    <div class="footnote">Rule-of-thumb quantities for a standard asphalt shingle roof, scaled by shape. Always confirm against an actual measurement before ordering.</div>
+  </div>
+
+  <div class="btns noprint">
+    <button class="btn btn-accent" id="saveBtn">Save order to job</button>
+    <button class="btn btn-outline" onclick="window.print()">Print</button>
+    <span id="saveStatus"></span>
+  </div>
+</div>
+
+<script>
+const SHAPES = {
+  gable:      { name:"Simple Gable",     desc:"Two slopes, no hips or valleys",       waste:10, ridgeFt:0.40, hipFt:0,    valleyFt:0,    eaveFt:1.00, rakeFt:0.60 },
+  hip:        { name:"Hip Roof",         desc:"Slopes on all sides, no valleys",      waste:12, ridgeFt:0.30, hipFt:0.50, valleyFt:0,    eaveFt:1.30, rakeFt:0    },
+  gableValley:{ name:"Gable + Valleys",  desc:"L-shape, addition, or dormers",        waste:15, ridgeFt:0.35, hipFt:0,    valleyFt:0.30, eaveFt:1.00, rakeFt:0.50 },
+  complex:    { name:"Complex / Cut-up", desc:"Hips, valleys & multiple dormers",     waste:20, ridgeFt:0.25, hipFt:0.30, valleyFt:0.40, eaveFt:1.20, rakeFt:0.30 }
+};
+let selectedShape = ${JSON.stringify(shapeVal)};
+const JOB = ${jobDataJson};
+const CFG2 = ${cfgJson};
+
+function buildShapeGrid(){
+  const grid = document.getElementById("shapeGrid");
+  grid.innerHTML = "";
+  Object.entries(SHAPES).forEach(([key, s]) => {
+    const div = document.createElement("div");
+    div.className = "shape-opt" + (key === selectedShape ? " active" : "");
+    div.innerHTML = '<div class="name">' + s.name + '</div><div class="desc">' + s.desc + '</div>';
+    div.onclick = () => { selectedShape = key; buildShapeGrid(); calculate(); };
+    grid.appendChild(div);
+  });
+}
+function roundUp(n, step) { step = step || 1; return Math.ceil(n / step) * step; }
+
+let lastRows = [];
+function calculate(){
+  const squares = parseFloat(document.getElementById("squares").value) || 0;
+  const shape = SHAPES[selectedShape];
+  const wasteOverride = document.getElementById("waste").value;
+  const wastePct = (wasteOverride !== "" && !isNaN(wasteOverride)) ? parseFloat(wasteOverride) : shape.waste;
+  const wasteMult = 1 + (wastePct / 100);
+  const ridgeFt = shape.ridgeFt * squares, hipFt = shape.hipFt * squares, valleyFt = shape.valleyFt * squares;
+  const eaveFt = shape.eaveFt * squares, rakeFt = shape.rakeFt * squares;
+  const perimeterFt = eaveFt + rakeFt, ridgeHipFt = ridgeFt + hipFt;
+
+  document.getElementById("sumSquares").textContent = squares.toFixed(1) + " sq";
+  document.getElementById("sumShape").textContent = shape.name;
+  document.getElementById("sumWaste").textContent = wastePct + "%";
+
+  const pipeBoots = parseInt(document.getElementById("pipeBoots").value) || 0;
+  const chimneys = parseInt(document.getElementById("chimneys").value) || 0;
+  const skylights = parseInt(document.getElementById("skylights").value) || 0;
+  const sidewall = parseFloat(document.getElementById("sidewall").value) || 0;
+
+  const rows = [];
+  rows.push({group:"Shingles & Underlayment"});
+  rows.push(["Architectural shingles", "bundle", roundUp(squares * 3 * wasteMult), "3 bundles/square"]);
+  rows.push(["Starter strip shingles", "bundle", roundUp((eaveFt / 120) * wasteMult), "Along eaves, ~120 ft/bundle"]);
+  rows.push(["Ridge cap shingles", "bundle", roundUp((ridgeHipFt / 33) * wasteMult), "Ridge + hip length, ~33 ft/bundle"]);
+  rows.push(["Synthetic underlayment", "roll", roundUp((squares / 10) * wasteMult), "~10 squares/roll"]);
+  rows.push(["Ice & water shield", "roll", roundUp(((eaveFt + valleyFt * 2) / 66) * wasteMult), "Eaves + valleys, 3 ft wide roll"]);
+  rows.push({group:"Flashing & Edging"});
+  rows.push(["Drip edge", "10 ft piece", roundUp((perimeterFt / 10) * wasteMult), "Eaves + rakes"]);
+  rows.push(["Ridge vent", "4 ft section", roundUp(ridgeFt / 4), "Along ridge only"]);
+  if (valleyFt > 0) rows.push(["Valley metal (W-valley)", "10 ft piece", roundUp((valleyFt / 10) * wasteMult), "Open valleys"]);
+  if (sidewall > 0) rows.push(["Step flashing", "bundle", roundUp(sidewall / 25), "1 bundle \u2248 25 linear ft of sidewall"]);
+  rows.push({group:"Fasteners & Sealant"});
+  rows.push(["Roofing nails (coil/box)", "50 lb box", roundUp(squares / 13, 1) || 1, "Ring-shank, ~13 squares/box"]);
+  rows.push(["Roofing/flashing cement", "10.3 oz tube", roundUp(squares / 2) || 1, "Detail & flashing seal"]);
+  const penetrationRows = [];
+  if (pipeBoots > 0) penetrationRows.push(["Pipe boots", "each", pipeBoots, "1 per vent stack"]);
+  if (chimneys > 0) penetrationRows.push(["Chimney flashing kit", "each", chimneys, "Size to chimney"]);
+  if (skylights > 0) penetrationRows.push(["Skylight flashing kit", "each", skylights, "Match to model"]);
+  if (penetrationRows.length){ rows.push({group:"Penetrations"}); penetrationRows.forEach(r => rows.push(r)); }
+
+  const tbody = document.getElementById("resultsBody");
+  tbody.innerHTML = "";
+  rows.forEach(r => {
+    if (r.group){
+      const tr = document.createElement("tr"); tr.className = "group-row";
+      tr.innerHTML = '<td colspan="4">' + r.group + '</td>'; tbody.appendChild(tr); return;
+    }
+    const [material, unit, qty, notes] = r;
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td class="material">' + material + '</td><td class="unit">' + unit + '</td><td class="num qty">' + qty + '</td><td class="notes">' + notes + '</td>';
+    tbody.appendChild(tr);
+  });
+  lastRows = rows.filter(r => !r.group).map(r => ({ material: r[0], unit: r[1], qty: r[2], notes: r[3] }));
+  return { squares, shapeName: shape.name, wastePct };
+}
+
+["squares","waste","pipeBoots","chimneys","skylights","sidewall"].forEach(id => {
+  document.getElementById(id).addEventListener("input", calculate);
+});
+
+document.getElementById("saveBtn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("saveStatus");
+  const result = calculate();
+  const order = {
+    jobId: JOB.id,
+    squares: result.squares,
+    shape: selectedShape,
+    wastePct: result.wastePct,
+    pipeBoots: parseInt(document.getElementById("pipeBoots").value) || 0,
+    chimneys: parseInt(document.getElementById("chimneys").value) || 0,
+    skylights: parseInt(document.getElementById("skylights").value) || 0,
+    sidewall: parseFloat(document.getElementById("sidewall").value) || 0,
+    materials: lastRows
+  };
+  statusEl.textContent = "Saving...";
+  try {
+    const res = await fetch(CFG2.url, {
+      method: "POST",
+      body: JSON.stringify({ action: "saveMaterialOrder", token: CFG2.token, order })
+    });
+    const data = await res.json();
+    statusEl.textContent = data && data.ok ? "Saved to job \u2713" : "Save failed";
+  } catch (err) {
+    statusEl.textContent = "Save failed \u2014 check connection";
+  }
+});
+
+buildShapeGrid();
+calculate();
+<\/script>
+</body></html>`;
+}
+async function openMaterialOrder(job) {
+  const win = window.open("", "_blank");
+  if (win) {
+    win.document.write("<p style='font-family:sans-serif;padding:40px;color:#666;'>Loading...</p>");
+  }
+  let existing = null;
+  try {
+    const res = await api("materialOrder", {
+      jobId: job.id
+    });
+    existing = res && res.order ? res.order : null;
+  } catch (err) {/* proceed with blank order */}
+  const html = buildMaterialOrderHTML(job, existing);
+  if (win) {
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  }
+}
 function jobFinancialFlags(j) {
   const flags = [];
   if (j.balanceDue && Number(j.balanceDue) > 0) flags.push(`Customer balance due: ${fmtMoney(j.balanceDue)}`);
@@ -900,7 +1181,18 @@ function DetailModal({
       fontSize: 13,
       cursor: "pointer"
     }
-  }, "🧱 Construction Estimate"))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  }, "🧱 Construction Estimate"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => openMaterialOrder(job),
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 6,
+      padding: "7px 12px",
+      color: INK,
+      fontSize: 13,
+      cursor: "pointer"
+    }
+  }, "📦 Material Order"))) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#EEECE4",
       padding: "7px 10px",
