@@ -44,7 +44,14 @@
     var totalCollected = insuranceReceived + customerReceived;
 
     var materialCost = num(job.materialCost);
-    var roofLabor = num(job.roofLabor);
+    var roofSquares = num(job.roofSquares);
+    var roofLaborRate = job.roofLaborRate !== undefined && job.roofLaborRate !== ""
+      ? num(job.roofLaborRate)
+      : 75;
+    var calculatedRoofLabor = roofSquares * roofLaborRate;
+    var roofLabor = job.roofLabor !== undefined && job.roofLabor !== "" && num(job.roofLabor) !== 0
+      ? num(job.roofLabor)
+      : calculatedRoofLabor;
     var interiorLabor = num(job.interiorLabor);
     var dumpDisposal = num(job.dumpDisposal);
     var permits = num(job.permits);
@@ -87,6 +94,9 @@
       totalJobValue: money(totalJobValue),
       totalCollected: money(totalCollected),
       materialCost: money(materialCost),
+      roofSquares: roofSquares,
+      roofLaborRate: money(roofLaborRate),
+      calculatedRoofLabor: money(calculatedRoofLabor),
       roofLabor: money(roofLabor),
       interiorLabor: money(interiorLabor),
       dumpDisposal: money(dumpDisposal),
