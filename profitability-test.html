@@ -9,49 +9,26 @@ body{font-family:Arial,sans-serif;background:#f6f4ef;color:#242220;margin:0;padd
 </style>
 </head>
 <body><div class="wrap">
-<div class="card"><h1>Job Profitability — Regression Test</h1><p class="note">Isolated test page. It does not modify CRM data. These checks protect GAP's commission, labor, insurance and profit formulas from accidental changes.</p></div>
+<div class="card"><h1>Job Profitability — Regression Test</h1><p class="note">Isolated test page. It does not modify CRM data. These checks protect GAP's insurance, retail/cash, commission, labor and profit formulas from accidental changes.</p></div>
 <div class="card"><h2>Michele — Current Projection</h2><div id="summary" class="grid"></div></div>
 <div class="card"><h2>Breakdown</h2><table id="breakdown"></table><p class="note">Interior labor, dump/disposal, permits, delivery and other costs are currently $0 until actual costs are entered. Projected profit decreases as those costs are added.</p></div>
 <div class="card"><h2>Formula Checks</h2><table id="tests"></table></div>
 </div>
 <script src="job-profitability.js"></script>
 <script>
-const michele = {
-  rcv: 13675.59,
-  deductible: 2000,
-  insuranceExpected: 11675.59,
-  materialCost: 4248.44,
-  roofSquares: 26.85,
-  roofLaborRate: 75,
-  roofLabor: '',
-  interiorLabor: 0,
-  dumpDisposal: 0,
-  permits: 0,
-  delivery: 0,
-  otherCosts: 0,
-  commissionRate: 0.10
-};
+const michele = {jobType:'Insurance',rcv:13675.59,deductible:2000,insuranceExpected:11675.59,materialCost:4248.44,roofSquares:26.85,roofLaborRate:75,roofLabor:'',interiorLabor:0,dumpDisposal:0,permits:0,delivery:0,otherCosts:0,commissionRate:0.10};
 const r = GAPProfitability.calculate(michele);
 const fmt = n => '$' + Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const metrics = [
-  ['Total Job Value',fmt(r.totalJobValue)],
-  ['Insurance Expected',fmt(r.insuranceExpected)],
-  ['Auto Roof Labor',fmt(r.calculatedRoofLabor)],
-  ['Sales Commission',fmt(r.salesCommission)],
-  ['Known Costs',fmt(r.totalCosts)],
-  ['Projected Profit',fmt(r.projectedProfit),'good'],
-  ['Projected Margin',r.projectedMarginPct.toFixed(1)+'%','good']
-];
+const metrics = [['Total Job Value',fmt(r.totalJobValue)],['Insurance Expected',fmt(r.insuranceExpected)],['Auto Roof Labor',fmt(r.calculatedRoofLabor)],['Sales Commission',fmt(r.salesCommission)],['Known Costs',fmt(r.totalCosts)],['Projected Profit',fmt(r.projectedProfit),'good'],['Projected Margin',r.projectedMarginPct.toFixed(1)+'%','good']];
 document.getElementById('summary').innerHTML=metrics.map(m=>`<div class="metric"><div class="label">${m[0]}</div><div class="value ${m[2]||''}">${m[1]}</div></div>`).join('');
-const rows=[
- ['RCV / Total approved',r.rcv],['Customer deductible',r.deductible],['Insurance expected',r.insuranceExpected],['Materials',-r.materialCost],['Roof labor (26.85 sq × $75)',-r.roofLabor],['Sales commission (10% insurance)',-r.salesCommission],['Interior labor',-r.interiorLabor],['Dump / disposal',-r.dumpDisposal],['Permits',-r.permits],['Delivery',-r.delivery],['Other costs',-r.otherCosts],['Projected profit',r.projectedProfit]
-];
+const rows=[['RCV / Total approved',r.rcv],['Customer deductible',r.deductible],['Insurance expected',r.insuranceExpected],['Materials',-r.materialCost],['Roof labor (26.85 sq × $75)',-r.roofLabor],['Sales commission (10% insurance)',-r.salesCommission],['Interior labor',-r.interiorLabor],['Dump / disposal',-r.dumpDisposal],['Permits',-r.permits],['Delivery',-r.delivery],['Other costs',-r.otherCosts],['Projected profit',r.projectedProfit]];
 document.getElementById('breakdown').innerHTML=rows.map(x=>`<tr><td>${x[0]}</td><td>${x[1]<0?'-':''}${fmt(Math.abs(x[1]))}</td></tr>`).join('');
-
 function close(a,b){return Math.abs(Number(a)-Number(b))<0.01}
-const derived = GAPProfitability.calculate({rcv:10000,deductible:2000,approvedSupplements:500,roofSquares:20,roofLaborRate:75,materialCost:3000,commissionRate:.10});
-const override = GAPProfitability.calculate({rcv:10000,deductible:2000,roofSquares:20,roofLaborRate:75,roofLabor:1800,commissionRate:.10});
-const collected = GAPProfitability.calculate({rcv:10000,deductible:2000,firstInsurancePayment:4000,depreciationReceived:2000,deductibleCollected:2000,materialCost:2000,roofLabor:1500,commissionRate:.10});
+const derived = GAPProfitability.calculate({jobType:'Insurance',rcv:10000,deductible:2000,approvedSupplements:500,roofSquares:20,roofLaborRate:75,materialCost:3000,commissionRate:.10});
+const override = GAPProfitability.calculate({jobType:'Insurance',rcv:10000,deductible:2000,roofSquares:20,roofLaborRate:75,roofLabor:1800,commissionRate:.10});
+const collected = GAPProfitability.calculate({jobType:'Insurance',rcv:10000,deductible:2000,firstInsurancePayment:4000,depreciationReceived:2000,deductibleCollected:2000,materialCost:2000,roofLabor:1500,commissionRate:.10});
+const retail = GAPProfitability.calculate({jobType:'Retail',contractAmount:12000,customerPaymentsReceived:5000,materialCost:3500,roofSquares:20,roofLaborRate:75,commissionRate:.10});
+const cash = GAPProfitability.calculate({jobType:'Cash',contractAmount:8000,amountPaid:8000,materialCost:2000,roofLabor:1500,commission:500});
 const tests=[
  ['Insurance expected excludes deductible',close(derived.insuranceExpected,8500),`Expected $8,500.00; got ${fmt(derived.insuranceExpected)}`],
  ['Commission is 10% of insurance expected',close(derived.salesCommission,850),`Expected $850.00; got ${fmt(derived.salesCommission)}`],
@@ -60,7 +37,12 @@ const tests=[
  ['Michele auto roof labor',close(r.roofLabor,2013.75),`Expected $2,013.75; got ${fmt(r.roofLabor)}`],
  ['Michele sales commission',close(r.salesCommission,1167.559),`Expected $1,167.56; got ${fmt(r.salesCommission)}`],
  ['Michele known-cost profit',close(r.projectedProfit,6245.84),`Expected $6,245.84; got ${fmt(r.projectedProfit)}`],
- ['Collected money drives final profit',close(collected.totalCollected,8000),`Expected collected $8,000.00; got ${fmt(collected.totalCollected)}`]
+ ['Collected money drives final profit',close(collected.totalCollected,8000),`Expected collected $8,000.00; got ${fmt(collected.totalCollected)}`],
+ ['Retail uses contract amount as job value',close(retail.totalJobValue,12000),`Expected $12,000.00; got ${fmt(retail.totalJobValue)}`],
+ ['Retail commission defaults to contract value',close(retail.salesCommission,1200),`Expected $1,200.00; got ${fmt(retail.salesCommission)}`],
+ ['Retail customer balance tracks unpaid contract',close(retail.customerBalance,7000),`Expected $7,000.00; got ${fmt(retail.customerBalance)}`],
+ ['Cash job respects manual commission',close(cash.salesCommission,500),`Expected $500.00; got ${fmt(cash.salesCommission)}`],
+ ['Cash job final profit uses collected cash',close(cash.finalProfit,4000),`Expected $4,000.00; got ${fmt(cash.finalProfit)}`]
 ];
 document.getElementById('tests').innerHTML=tests.map(t=>`<tr><td>${t[0]}</td><td class="${t[1]?'pass':'fail'}">${t[1]?'PASS':'FAIL'}<div class="note">${t[2]}</div></td></tr>`).join('');
 </script></body></html>
