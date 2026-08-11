@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GAP CRM — Profitability Test</title>
+<style>
+body{font-family:Arial,sans-serif;background:#f6f4ef;color:#242220;margin:0;padding:28px}.wrap{max-width:900px;margin:auto}.card{background:#fff;border:1px solid #dedbd1;border-radius:10px;padding:22px;margin-bottom:18px}h1,h2{margin-top:0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}.metric{background:#f7f6f2;border-radius:8px;padding:14px}.label{font-size:12px;color:#6f6c63;text-transform:uppercase}.value{font-size:24px;font-weight:700;margin-top:4px}.good{color:#27500a}.note{font-size:13px;color:#6f6c63;line-height:1.5}table{width:100%;border-collapse:collapse}td{padding:8px;border-bottom:1px solid #eee}td:last-child{text-align:right;font-weight:600}
+</style>
+</head>
+<body><div class="wrap">
+<div class="card"><h1>Job Profitability — Test</h1><p class="note">Isolated test page. It does not modify production CRM data.</p></div>
+<div class="card"><h2>Michele — Current Projection</h2><div id="summary" class="grid"></div></div>
+<div class="card"><h2>Breakdown</h2><table id="breakdown"></table><p class="note">Interior labor, dump/disposal, permits, delivery and other costs are currently $0 until actual costs are entered. Therefore projected profit will decrease as those costs are added.</p></div>
+</div>
+<script src="job-profitability.js"></script>
+<script>
+const michele = {
+  rcv: 13675.59,
+  deductible: 2000,
+  insuranceExpected: 11675.59,
+  materialCost: 4248.44,
+  roofLabor: 26.85 * 75,
+  interiorLabor: 0,
+  dumpDisposal: 0,
+  permits: 0,
+  delivery: 0,
+  otherCosts: 0,
+  commissionRate: 0.10
+};
+const r = GAPProfitability.calculate(michele);
+const fmt = n => '$' + Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const metrics = [
+  ['Total Job Value',fmt(r.totalJobValue)],
+  ['Insurance Expected',fmt(r.insuranceExpected)],
+  ['Sales Commission',fmt(r.salesCommission)],
+  ['Known Costs',fmt(r.totalCosts)],
+  ['Projected Profit',fmt(r.projectedProfit),'good'],
+  ['Projected Margin',r.projectedMarginPct.toFixed(1)+'%','good']
+];
+document.getElementById('summary').innerHTML=metrics.map(m=>`<div class="metric"><div class="label">${m[0]}</div><div class="value ${m[2]||''}">${m[1]}</div></div>`).join('');
+const rows=[
+ ['RCV / Total approved',r.rcv],['Customer deductible',r.deductible],['Insurance expected',r.insuranceExpected],['Materials',-r.materialCost],['Roof labor (26.85 sq × $75)',-r.roofLabor],['Sales commission (10% insurance)',-r.salesCommission],['Interior labor',-r.interiorLabor],['Dump / disposal',-r.dumpDisposal],['Permits',-r.permits],['Delivery',-r.delivery],['Other costs',-r.otherCosts],['Projected profit',r.projectedProfit]
+];
+document.getElementById('breakdown').innerHTML=rows.map(x=>`<tr><td>${x[0]}</td><td>${x[1]<0?'-':''}${fmt(Math.abs(x[1]))}</td></tr>`).join('');
+</script></body></html>
