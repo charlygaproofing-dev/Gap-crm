@@ -3108,6 +3108,33 @@ function calcInsuranceFinancials(job, payments) {
   }
   const netExpectedByGap = paFeeAmount != null ? round2(totalCollectible - paFeeAmount) : null;
   const estimatedGapProfit = netExpectedByGap != null ? round2(netExpectedByGap - insNum(job.materialCost) - insNum(job.commission)) : null;
+
+  // Practical field-office estimate: how much cash is theoretically
+  // available to build the roof, based on RCV minus the deductible plus
+  // the recoverable depreciation \u2014 separate from "Total insurance
+  // proceeds" above, which is based on the actual first check received.
+  const cashForRoofWork = round2(rcv - deductible + recoverableDep);
+
+  // Calculated-vs-actual first check check (flags data entry / estimate
+  // mismatches before money changes hands).
+  const rcvVigente = round2(rcv + supplements);
+  const otherDeductions = insNum(job.insOtherDeductions);
+  const firstCheckCalculated = round2(rcvVigente - recoverableDep - nonRecoverableDep - deductible - otherDeductions);
+  const firstCheckMismatch = round2(Math.abs(firstCheckCalculated - firstCheck)) > 1;
+
+  // Section 3: GAP contract exclusions (multi-trade claims where GAP
+  // isn't doing every scope of work \u2014 windows, gutters, fence, etc).
+  const excludedRepairs = insNum(job.insExcludedRepairsAmount);
+  const authorizedDiscounts = insNum(job.insAuthorizedDiscounts);
+  const nonCollectibleAmount = insNum(job.insNonCollectibleAmount);
+  const totalCollectibleContract = round2(insNum(job.contractAmount) - excludedRepairs - authorizedDiscounts - nonCollectibleAmount);
+
+  // Section 4: precise sales commission ($X advance + Y% of the
+  // collectible contract, advance is PART of the total, never on top of it).
+  const commissionPct = job.insCommissionPct != null && job.insCommissionPct !== "" ? insNum(job.insCommissionPct) : 10;
+  const commissionAdvance = job.insCommissionAdvance != null && job.insCommissionAdvance !== "" ? insNum(job.insCommissionAdvance) : 500;
+  const totalCommission = round2(totalCollectibleContract * (commissionPct / 100));
+  const commissionBalanceOwed = Math.max(0, round2(totalCommission - commissionAdvance));
   return {
     totalCoveredWork,
     netCustomerDeductible,
@@ -3126,7 +3153,16 @@ function calcInsuranceFinancials(job, payments) {
     ordinanceLaw,
     ordinanceLawEligible,
     deductible,
-    netDeductibleCollected: customerPaymentsReceived
+    netDeductibleCollected: customerPaymentsReceived,
+    cashForRoofWork,
+    rcvVigente,
+    firstCheckCalculated,
+    firstCheckMismatch,
+    totalCollectibleContract,
+    totalCommission,
+    commissionBalanceOwed,
+    commissionPct,
+    commissionAdvance
   };
 }
 function insWarnings(job, calc) {
@@ -3148,6 +3184,9 @@ function insWarnings(job, calc) {
   }
   if (job.contractAmount && Number(job.contractAmount) > calc.totalCoveredWork) {
     warnings.push("Contract amount exceeds the documented covered work \u2014 verify authorized scope.");
+  }
+  if (calc.firstCheckMismatch) {
+    warnings.push("Existe una diferencia entre el primer cheque calculado (" + fmtMoney(calc.firstCheckCalculated) + ") y el pago real (" + fmtMoney(insNum(job.insFirstCheck)) + "). Revise el estimado, las deducciones, los pagos anteriores o la carta de pago.");
   }
   return warnings;
 }
@@ -3252,6 +3291,12 @@ const INS_FIELD_GROUPS = [{
 }, {
   title: "Invoice",
   fields: [["insCompletedScopeDescription", "Completed scope description", "textarea"], ["insAuthorizedInvoiceAmount", "Total authorized invoice amount", "number"]]
+}, {
+  title: "GAP contract exclusions",
+  fields: [["insOtherDeductions", "Other deductions (for first-check check)", "number"], ["insExcludedRepairsAmount", "Excluded repairs (not done by GAP)", "number"], ["insAuthorizedDiscounts", "Authorized discounts", "number"], ["insNonCollectibleAmount", "Non-collectible amount", "number"]]
+}, {
+  title: "Sales commission",
+  fields: [["insCommissionPct", "Commission % (default 10%)", "number"], ["insCommissionAdvance", "Advance amount (default $500)", "number"], ["insCommissionAdvanceDate", "Advance paid date", "date"], ["insCommissionFinalPaymentDate", "Final payment date", "date"], ["insCommissionStatus", "Commission status", "select", ["Pending", "Advance Paid", "Paid in Full"]]]
 }];
 function InsuranceFinancialsPanel({
   job,
@@ -3438,6 +3483,14 @@ function InsuranceFinancialsPanel({
     value: fmtMoney(calc.netCustomerDeductible),
     tag: "calculated"
   }), React.createElement(InsRow, {
+    label: "Est. cash for roof work (RCV \u2212 deductible + recoverable dep.)",
+    value: fmtMoney(calc.cashForRoofWork),
+    tag: "estimated"
+  }), React.createElement(InsRow, {
+    label: "First check calculated (RCV vigente \u2212 deps \u2212 deductible \u2212 other)",
+    value: fmtMoney(calc.firstCheckCalculated),
+    tag: calc.firstCheckMismatch ? "unconfirmed" : "calculated"
+  }), React.createElement(InsRow, {
     label: "Total insurance proceeds",
     value: fmtMoney(calc.totalInsuranceProceeds),
     tag: "calculated"
@@ -3466,6 +3519,55 @@ function InsuranceFinancialsPanel({
     label: "Estimated GAP profit",
     value: calc.estimatedGapProfit != null ? fmtMoney(calc.estimatedGapProfit) : "Pending",
     tag: calc.estimatedGapProfit != null ? "estimated" : "unconfirmed",
+    big: true
+  })), React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 14,
+      color: INK,
+      marginBottom: 8
+    }
+  }, "GAP Contract & Sales Commission"), React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      padding: "10px 14px",
+      marginBottom: 14
+    }
+  }, React.createElement(InsRow, {
+    label: "Contract value with GAP",
+    value: fmtMoney(Number(job.contractAmount) || 0),
+    tag: "documented"
+  }), React.createElement(InsRow, {
+    label: "Excluded repairs (not done by GAP)",
+    value: fmtMoney(insNum(job.insExcludedRepairsAmount)),
+    tag: "documented"
+  }), React.createElement(InsRow, {
+    label: "Authorized discounts",
+    value: fmtMoney(insNum(job.insAuthorizedDiscounts)),
+    tag: "documented"
+  }), React.createElement(InsRow, {
+    label: "Non-collectible amount",
+    value: fmtMoney(insNum(job.insNonCollectibleAmount)),
+    tag: "documented"
+  }), React.createElement(InsRow, {
+    label: "Total collectible contract",
+    value: fmtMoney(calc.totalCollectibleContract),
+    tag: "calculated",
+    big: true
+  }), React.createElement(InsRow, {
+    label: "Sales commission (" + calc.commissionPct + "% of collectible contract)",
+    value: fmtMoney(calc.totalCommission),
+    tag: "calculated"
+  }), React.createElement(InsRow, {
+    label: "Advance paid (" + fmtMoney(calc.commissionAdvance) + " default, part of total)",
+    value: job.insCommissionAdvanceDate ? fmtDate(job.insCommissionAdvanceDate) : "Not marked paid",
+    tag: "documented"
+  }), React.createElement(InsRow, {
+    label: "Commission balance owed to rep",
+    value: fmtMoney(calc.commissionBalanceOwed),
+    tag: "calculated",
     big: true
   })),
   // Editable fields
