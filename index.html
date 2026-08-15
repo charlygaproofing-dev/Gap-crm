@@ -3071,233 +3071,249 @@ function insNum(v) {
   const n = Number(v);
   return isNaN(n) ? 0 : n;
 }
-function calcInsuranceFinancials(job, payments) {
-  const rcv = insNum(job.insRCV);
-  const otherStructures = insNum(job.insOtherStructures);
-  const totalCoveredWork = round2(rcv + otherStructures);
-  const deductible = insNum(job.insDeductible);
-  const deductibleReduction = insNum(job.insDeductibleReduction);
-  const netCustomerDeductible = round2(deductible - deductibleReduction);
-  const firstCheck = insNum(job.insFirstCheck);
+
+// Core financial model: Expected Revenue -> Net Project Budget -> Total
+// Costs -> Profit/Loss. Verified against the Evelyn Gonzalez validation
+// case: Settlement $20,310.42, Interest $693.73, Initial Check $14,485.20,
+// Deductible $2,050, Recoverable Dep $2,066.65, PA Fee $2,100.42 (10% of
+// settlement+interest), Appraisal $750 -> Net Project Budget $15,751.43.
+function calcFinancialDashboard(job, payments, expenses) {
+  const settlement = insNum(job.insSettlementAmount);
   const interest = insNum(job.insInterestInFirstCheck);
+  const settlementPlusInterest = round2(settlement + interest);
+  const initialCheck = insNum(job.insFirstCheck);
+  const deductible = insNum(job.insDeductible);
   const recoverableDep = insNum(job.insRecoverableDepreciation);
-  const nonRecoverableDep = insNum(job.insNonRecoverableDepreciation);
   const supplements = insNum(job.insSupplementsApproved);
-  const ordinanceLaw = insNum(job.insOrdinanceLaw);
-  const ordinanceLawEligible = job.insOrdinanceLawEligible === "Yes";
-  const totalInsuranceProceeds = round2(firstCheck - interest + recoverableDep + supplements + (ordinanceLawEligible ? ordinanceLaw : 0));
-  const totalCollectible = round2(totalInsuranceProceeds + netCustomerDeductible);
-  const counted = (payments || []).filter(p => ["Received", "Deposited", "Cleared"].includes(p.status));
-  const insuranceTypes = ["First insurance check", "Recoverable depreciation check", "Supplement", "Ordinance and Law"];
-  const customerTypes = ["Customer deductible", "Customer upgrade", "Other"];
-  const insurancePaymentsReceived = round2(counted.filter(p => insuranceTypes.includes(p.type)).reduce((s, p) => s + insNum(p.amount), 0));
-  const customerPaymentsReceived = round2(counted.filter(p => customerTypes.includes(p.type)).reduce((s, p) => s + insNum(p.amount), 0));
-  const totalCollectedToDate = round2(insurancePaymentsReceived + customerPaymentsReceived);
-  const remainingCollectible = round2(totalCollectible - totalCollectedToDate);
-  const paPct = insNum(job.insPAPercentage) / 100;
-  const basis = job.insPAFeeBasis;
-  let paFeeAmount = null;
-  if (basis === "Increase obtained by PA") {
-    paFeeAmount = round2((insNum(job.insAppraisalAward) - insNum(job.insOriginalEstimate)) * paPct);
-  } else if (basis === "Total insurance proceeds") {
-    paFeeAmount = round2(totalInsuranceProceeds * paPct);
-  } else if (basis === "Appraisal/award amount") {
-    paFeeAmount = round2(insNum(job.insAppraisalAward) * paPct);
-  } else if (basis === "Manual amount") {
-    paFeeAmount = round2(insNum(job.insPAFeeManualAmount));
-  }
-  const netExpectedByGap = paFeeAmount != null ? round2(totalCollectible - paFeeAmount) : null;
-  const estimatedGapProfit = netExpectedByGap != null ? round2(netExpectedByGap - insNum(job.materialCost) - insNum(job.commission)) : null;
-
-  // Practical field-office estimate: how much cash is theoretically
-  // available to build the roof, based on RCV minus the deductible plus
-  // the recoverable depreciation \u2014 separate from "Total insurance
-  // proceeds" above, which is based on the actual first check received.
-  const cashForRoofWork = round2(rcv - deductible + recoverableDep);
-
-  // Calculated-vs-actual first check check (flags data entry / estimate
-  // mismatches before money changes hands).
-  const rcvVigente = round2(rcv + supplements);
-  const otherDeductions = insNum(job.insOtherDeductions);
-  const firstCheckCalculated = round2(rcvVigente - recoverableDep - nonRecoverableDep - deductible - otherDeductions);
-  const firstCheckMismatch = round2(Math.abs(firstCheckCalculated - firstCheck)) > 1;
-
-  // Section 3: GAP contract exclusions (multi-trade claims where GAP
-  // isn't doing every scope of work \u2014 windows, gutters, fence, etc).
-  const excludedRepairs = insNum(job.insExcludedRepairsAmount);
-  const authorizedDiscounts = insNum(job.insAuthorizedDiscounts);
-  const nonCollectibleAmount = insNum(job.insNonCollectibleAmount);
-  const totalCollectibleContract = round2(insNum(job.contractAmount) - excludedRepairs - authorizedDiscounts - nonCollectibleAmount);
-
-  // Section 4: precise sales commission ($X advance + Y% of the
-  // collectible contract, advance is PART of the total, never on top of it).
+  const ordinanceLaw = job.insOrdinanceLawEligible === "Yes" ? insNum(job.insOrdinanceLaw) : 0;
+  const expectedRevenue = round2(initialCheck + deductible + recoverableDep + supplements + ordinanceLaw);
+  const paPct = job.insPAPercentage != null && job.insPAPercentage !== "" ? insNum(job.insPAPercentage) : 10;
+  let paFee;
+  if (job.insPAFeeBasis === "Manual amount") paFee = insNum(job.insPAFeeManualAmount);else if (job.insPAFeeBasis === "Pending confirmation") paFee = null;else paFee = round2(settlementPlusInterest * (paPct / 100));
+  const appraisalFee = insNum(job.insAppraisalFee);
+  const otherClaimFees = insNum(job.insOtherClaimFees);
+  const netProjectBudget = paFee != null ? round2(expectedRevenue - paFee - appraisalFee - otherClaimFees) : null;
   const commissionPct = job.insCommissionPct != null && job.insCommissionPct !== "" ? insNum(job.insCommissionPct) : 10;
   const commissionAdvance = job.insCommissionAdvance != null && job.insCommissionAdvance !== "" ? insNum(job.insCommissionAdvance) : 500;
-  const totalCommission = round2(totalCollectibleContract * (commissionPct / 100));
-  const commissionBalanceOwed = Math.max(0, round2(totalCommission - commissionAdvance));
+  const totalCommission = netProjectBudget != null ? round2(netProjectBudget * (commissionPct / 100)) : null;
+  const remainingCommission = totalCommission != null ? Math.max(0, round2(totalCommission - commissionAdvance)) : null;
+  const expList = expenses || [];
+  const materialsCost = round2(expList.filter(e => e.category === "Materials").reduce((s, e) => s + insNum(e.amount), 0));
+  const laborCost = round2(expList.filter(e => e.category === "Labor").reduce((s, e) => s + insNum(e.amount), 0));
+  const otherExpensesCost = round2(expList.filter(e => e.category !== "Materials" && e.category !== "Labor").reduce((s, e) => s + insNum(e.amount), 0));
+  const totalCosts = totalCommission != null ? round2(totalCommission + materialsCost + laborCost + otherExpensesCost) : null;
+  const profitLoss = netProjectBudget != null && totalCosts != null ? round2(netProjectBudget - totalCosts) : null;
+  const profitMarginPct = profitLoss != null && netProjectBudget ? round2(profitLoss / netProjectBudget * 100) : null;
+  const payList = (payments || []).filter(p => ["Received", "Deposited", "Cleared"].includes(p.status));
+  const insuranceCheckReceived = round2(payList.filter(p => p.type === "First insurance check").reduce((s, p) => s + insNum(p.amount), 0));
+  const deductibleCollected = round2(payList.filter(p => p.type === "Customer deductible").reduce((s, p) => s + insNum(p.amount), 0));
+  const recoverableDepReceived = round2(payList.filter(p => p.type === "Recoverable depreciation check").reduce((s, p) => s + insNum(p.amount), 0));
+  const otherInsuranceReceived = round2(payList.filter(p => ["Supplement", "Ordinance and Law"].includes(p.type)).reduce((s, p) => s + insNum(p.amount), 0));
+  const totalCollected = round2(insuranceCheckReceived + deductibleCollected + recoverableDepReceived + otherInsuranceReceived);
+  const outstandingToCollect = round2(expectedRevenue - totalCollected);
+  const missingReceiptsTotal = round2(expList.filter(e => e.receiptStatus === "Missing").reduce((s, e) => s + insNum(e.amount), 0));
   return {
-    totalCoveredWork,
-    netCustomerDeductible,
-    totalInsuranceProceeds,
-    totalCollectible,
-    insurancePaymentsReceived,
-    customerPaymentsReceived,
-    totalCollectedToDate,
-    remainingCollectible,
-    paFeeAmount,
-    netExpectedByGap,
-    estimatedGapProfit,
+    settlement,
     interest,
-    recoverableDep,
-    nonRecoverableDep,
-    ordinanceLaw,
-    ordinanceLawEligible,
+    settlementPlusInterest,
+    initialCheck,
     deductible,
-    netDeductibleCollected: customerPaymentsReceived,
-    cashForRoofWork,
-    rcvVigente,
-    firstCheckCalculated,
-    firstCheckMismatch,
-    totalCollectibleContract,
-    totalCommission,
-    commissionBalanceOwed,
+    recoverableDep,
+    supplements,
+    ordinanceLaw,
+    expectedRevenue,
+    paPct,
+    paFee,
+    appraisalFee,
+    otherClaimFees,
+    netProjectBudget,
     commissionPct,
-    commissionAdvance
+    commissionAdvance,
+    totalCommission,
+    remainingCommission,
+    materialsCost,
+    laborCost,
+    otherExpensesCost,
+    totalCosts,
+    profitLoss,
+    profitMarginPct,
+    insuranceCheckReceived,
+    deductibleCollected,
+    recoverableDepReceived,
+    otherInsuranceReceived,
+    totalCollected,
+    outstandingToCollect,
+    missingReceiptsTotal
   };
 }
-function insWarnings(job, calc) {
-  const warnings = [];
-  if (!job.insPAFeeBasis || job.insPAFeeBasis === "Pending confirmation") {
-    warnings.push("Public adjuster fee basis has not been confirmed \u2014 Net to GAP is pending.");
-  }
-  if (calc.recoverableDep > 0 && job.insRecoverableDepreciationReleased !== "Yes") {
-    warnings.push("Recoverable depreciation (" + fmtMoney(calc.recoverableDep) + ") has not been released yet.");
-  }
-  if (calc.netCustomerDeductible > 0 && calc.customerPaymentsReceived < calc.netCustomerDeductible) {
-    warnings.push("Customer deductible not fully collected (" + fmtMoney(calc.customerPaymentsReceived) + " of " + fmtMoney(calc.netCustomerDeductible) + ").");
-  }
-  if (job.insCompletedScopeMatchesAward === "No") {
-    warnings.push("Completed scope does not match the full insurance award.");
-  }
-  if (calc.remainingCollectible < 0) {
-    warnings.push("Remaining collectible is negative \u2014 review payments received.");
-  }
-  if (job.contractAmount && Number(job.contractAmount) > calc.totalCoveredWork) {
-    warnings.push("Contract amount exceeds the documented covered work \u2014 verify authorized scope.");
-  }
-  if (calc.firstCheckMismatch) {
-    warnings.push("Existe una diferencia entre el primer cheque calculado (" + fmtMoney(calc.firstCheckCalculated) + ") y el pago real (" + fmtMoney(insNum(job.insFirstCheck)) + "). Revise el estimado, las deducciones, los pagos anteriores o la carta de pago.");
-  }
-  return warnings;
-}
-function InsTag({
-  kind,
-  children
-}) {
-  const styles = {
-    documented: {
-      bg: OK_BG,
-      text: OK_TEXT
-    },
-    calculated: {
-      bg: "#E6F1FB",
-      text: "#0C447C"
-    },
-    estimated: {
-      bg: "#FDF3D9",
-      text: "#8A6200"
-    },
-    unconfirmed: {
+function bigCardColor(kind, calc) {
+  if (kind === "profit") {
+    if (calc.profitLoss == null) return {
+      bg: "#EEECE4",
+      text: MUTE
+    };
+    if (calc.profitLoss < 0) return {
       bg: DANGER_BG,
       text: DANGER_TEXT
-    }
+    };
+    if (calc.profitMarginPct != null && calc.profitMarginPct < 12) return {
+      bg: "#FDF3D9",
+      text: "#8A6200"
+    };
+    return {
+      bg: OK_BG,
+      text: OK_TEXT
+    };
+  }
+  return {
+    bg: "#EEECE4",
+    text: INK
   };
-  const s = styles[kind] || styles.calculated;
-  return React.createElement("span", {
-    style: {
-      fontSize: 10,
-      fontWeight: 600,
-      textTransform: "uppercase",
-      letterSpacing: ".03em",
-      background: s.bg,
-      color: s.text,
-      padding: "2px 6px",
-      borderRadius: 4,
-      marginLeft: 6
-    }
-  }, children);
 }
-function InsRow({
+function BigCard({
   label,
   value,
-  tag,
-  big
+  color
+}) {
+  return React.createElement("div", {
+    style: {
+      background: color.bg,
+      borderRadius: 8,
+      padding: "12px 14px",
+      flex: "1 1 150px",
+      minWidth: 140
+    }
+  }, React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      fontWeight: 700,
+      textTransform: "uppercase",
+      letterSpacing: ".04em",
+      color: color.text,
+      opacity: 0.75,
+      marginBottom: 4
+    }
+  }, label), React.createElement("div", {
+    style: {
+      fontSize: 19,
+      fontWeight: 800,
+      color: color.text
+    }
+  }, value));
+}
+function MiniRow({
+  label,
+  value,
+  sub
 }) {
   return React.createElement("div", {
     style: {
       display: "flex",
       justifyContent: "space-between",
-      alignItems: "center",
-      padding: "7px 0",
-      borderBottom: `1px solid ${LINE}`
-    }
-  }, React.createElement("div", {
-    style: {
-      fontSize: 12.5,
-      color: MUTE
-    }
-  }, label), React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center"
+      padding: "6px 0",
+      borderBottom: `1px solid ${LINE}`,
+      fontSize: sub ? 11.5 : 13
     }
   }, React.createElement("span", {
     style: {
-      fontSize: big ? 15 : 13,
-      fontWeight: big ? 700 : 600,
-      color: INK
+      color: sub ? MUTE : INK
     }
-  }, value), tag ? React.createElement(InsTag, {
-    kind: tag
-  }, tag.charAt(0).toUpperCase() + tag.slice(1)) : null));
+  }, label), React.createElement("span", {
+    style: {
+      fontWeight: sub ? 500 : 600,
+      color: sub ? MUTE : INK
+    }
+  }, value));
 }
-const PA_FEE_BASIS_OPTIONS = ["Increase obtained by PA", "Total insurance proceeds", "Appraisal/award amount", "Manual amount", "Pending confirmation"];
-const PAYMENT_TYPES = ["First insurance check", "Recoverable depreciation check", "Supplement", "Ordinance and Law", "Customer deductible", "Customer upgrade", "Other"];
-const PAYMENT_STATUSES = ["Expected", "Received", "Deposited", "Cleared", "Voided"];
-const INS_FIELD_GROUPS = [{
+function BlockCard({
+  title,
+  children
+}) {
+  return React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      padding: "12px 14px"
+    }
+  }, React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 13,
+      color: INK,
+      marginBottom: 6
+    }
+  }, title), children);
+}
+const INSURANCE_DETAILS_GROUPS = [{
   title: "Claim info",
-  fields: [["insuranceCarrier", "Insurance company", "text"], ["claimNum", "Claim #", "text"], ["insPublicAdjusterName", "Public adjuster name", "text"]]
+  fields: [["insuranceCarrier", "Insurance company", "text"], ["claimNum", "Claim #", "text"], ["insPolicyNumber", "Policy #", "text"], ["insDateOfLoss", "Date of loss", "date"], ["insPublicAdjusterName", "Public adjuster name", "text"]]
 }, {
-  title: "Insurance values",
-  fields: [["insRCV", "RCV (dwelling)", "number"], ["insACV", "ACV", "number"], ["insOtherStructures", "Other structures amount", "number"], ["insOriginalEstimate", "Original insurance estimate", "number"], ["insAppraisalAward", "Appraisal/award amount", "number"]]
-}, {
-  title: "Deductible",
-  fields: [["insDeductible", "Deductible", "number"], ["insDeductibleReduction", "Deductible reduction/credit", "number"]]
-}, {
-  title: "First check",
-  fields: [["insFirstCheck", "First insurance check", "number"], ["insInterestInFirstCheck", "Interest included in first check", "number"], ["insInterestPayableToGap", "Interest payable to GAP?", "yesno"]]
+  title: "Valuation",
+  fields: [["insRCV", "RCV", "number"], ["insACV", "ACV", "number"], ["insSettlementAmount", "Settlement / agreed amount", "number"], ["insInterestInFirstCheck", "Interest", "number"], ["insOriginalEstimate", "Original insurance estimate", "number"], ["insAppraisalAward", "Appraisal/award amount", "number"], ["insOtherStructures", "Other structures amount", "number"]]
 }, {
   title: "Depreciation",
-  fields: [["insRecoverableDepreciation", "Recoverable depreciation", "number"], ["insRecoverableDepreciationReleased", "Recoverable depreciation released?", "yesno"], ["insNonRecoverableDepreciation", "Non-recoverable depreciation", "number"]]
+  fields: [["insRecoverableDepreciation", "Recoverable depreciation", "number"], ["insRecoverableDepreciationReleased", "Released?", "yesno"], ["insNonRecoverableDepreciation", "Non-recoverable depreciation", "number"]]
 }, {
-  title: "Supplements & Ordinance/Law",
-  fields: [["insSupplementsApproved", "Supplements approved", "number"], ["insOrdinanceLaw", "Ordinance and Law amount", "number"], ["insOrdinanceLawEligible", "O&L approved & collectible?", "yesno"]]
+  title: "Customer responsibility",
+  fields: [["insDeductible", "Deductible", "number"], ["insDeductibleReduction", "Deductible reduction/credit", "number"]]
 }, {
-  title: "Public adjuster fee",
-  fields: [["insPAFeeBasis", "PA fee basis", "select", PA_FEE_BASIS_OPTIONS], ["insPAPercentage", "PA fee percentage", "number"], ["insPAFeeManualAmount", "PA fee manual amount", "number"], ["insPAFeeStatus", "PA fee status", "select", ["Confirmed", "Estimated", "Pending"]]]
+  title: "Insurance payments",
+  fields: [["insPriorPayments", "Prior payments", "number"], ["insFirstCheck", "Initial insurance check", "number"], ["insSupplementsApproved", "Supplemental payments", "number"], ["insOrdinanceLaw", "Ordinance and Law amount", "number"], ["insOrdinanceLawEligible", "O&L approved & collectible?", "yesno"]]
 }, {
-  title: "Scope & notes",
-  fields: [["insCompletedScopeMatchesAward", "Completed scope matches award?", "yesno"], ["insNotes", "Notes / document source", "textarea"]]
+  title: "Claim expenses",
+  fields: [["insPAFeeBasis", "PA fee basis", "select", ["Percent of settlement+interest", "Manual amount", "Pending confirmation"]], ["insPAPercentage", "PA fee % (default 10%)", "number"], ["insPAFeeManualAmount", "PA fee manual amount", "number"], ["insPAFeeStatus", "PA fee status", "select", ["Confirmed", "Estimated", "Pending"]], ["insAppraisalFee", "Appraisal fee", "number"], ["insOtherClaimFees", "Other claim fees", "number"]]
 }, {
-  title: "Invoice",
-  fields: [["insCompletedScopeDescription", "Completed scope description", "textarea"], ["insAuthorizedInvoiceAmount", "Total authorized invoice amount", "number"]]
-}, {
-  title: "GAP contract exclusions",
-  fields: [["insOtherDeductions", "Other deductions (for first-check check)", "number"], ["insExcludedRepairsAmount", "Excluded repairs (not done by GAP)", "number"], ["insAuthorizedDiscounts", "Authorized discounts", "number"], ["insNonCollectibleAmount", "Non-collectible amount", "number"]]
-}, {
-  title: "Sales commission",
+  title: "Commission",
   fields: [["insCommissionPct", "Commission % (default 10%)", "number"], ["insCommissionAdvance", "Advance amount (default $500)", "number"], ["insCommissionAdvanceDate", "Advance paid date", "date"], ["insCommissionFinalPaymentDate", "Final payment date", "date"], ["insCommissionStatus", "Commission status", "select", ["Pending", "Advance Paid", "Paid in Full"]]]
+}, {
+  title: "Contract & scope",
+  fields: [["insExcludedRepairsAmount", "Excluded repairs (not done by GAP)", "number"], ["insAuthorizedDiscounts", "Authorized discounts", "number"], ["insNonCollectibleAmount", "Non-collectible amount", "number"], ["insCompletedScopeMatchesAward", "Completed scope matches award?", "yesno"], ["insCompletedScopeDescription", "Completed scope description", "textarea"], ["insAuthorizedInvoiceAmount", "Total authorized invoice amount", "number"]]
+}, {
+  title: "Notes",
+  fields: [["insNotes", "Notes / document source", "textarea"]]
 }];
+const PAYMENT_TYPES = ["First insurance check", "Recoverable depreciation check", "Supplement", "Ordinance and Law", "Customer deductible", "Customer upgrade", "Other"];
+const PAYMENT_STATUSES = ["Expected", "Received", "Deposited", "Cleared", "Voided"];
+const EXPENSE_CATEGORIES = ["Materials", "Labor", "Subcontractor", "Permit", "Dumpster", "Delivery", "Equipment", "Repair", "Customer Refund", "Other"];
+const RECEIPT_STATUSES = ["Available", "Missing", "Pending"];
+function Accordion({
+  title,
+  children,
+  defaultOpen
+}) {
+  const [open, setOpen] = useState(!!defaultOpen);
+  return React.createElement("div", {
+    style: {
+      marginTop: 14
+    }
+  }, React.createElement("button", {
+    onClick: () => setOpen(!open),
+    style: {
+      width: "100%",
+      textAlign: "left",
+      background: "#EEECE4",
+      border: "none",
+      borderRadius: 6,
+      padding: "10px 14px",
+      fontFamily: FONT_HEAD,
+      fontSize: 14,
+      color: INK,
+      cursor: "pointer",
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center"
+    }
+  }, title, React.createElement("span", {
+    style: {
+      fontSize: 12
+    }
+  }, open ? "\u25B2 Hide" : "\u25BC Show")), open && React.createElement("div", {
+    style: {
+      padding: "12px 2px 0"
+    }
+  }, children));
+}
 function InsuranceFinancialsPanel({
   job,
   onSave
@@ -3307,7 +3323,8 @@ function InsuranceFinancialsPanel({
     ...job
   });
   const [payments, setPayments] = useState([]);
-  const [loadingPayments, setLoadingPayments] = useState(true);
+  const [expenses, setExpenses] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [newPayment, setNewPayment] = useState({
     date: "",
     type: PAYMENT_TYPES[0],
@@ -3317,22 +3334,35 @@ function InsuranceFinancialsPanel({
     status: "Expected",
     notes: ""
   });
-  const [addingPayment, setAddingPayment] = useState(false);
+  const [newExpense, setNewExpense] = useState({
+    date: "",
+    category: EXPENSE_CATEGORIES[0],
+    vendor: "",
+    description: "",
+    amount: "",
+    receiptStatus: "Missing",
+    paymentMethod: "",
+    notes: ""
+  });
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     setForm({
       ...job
     });
   }, [job && job.id]);
-  function loadPayments() {
-    setLoadingPayments(true);
-    api("payments", {
+  function loadAll() {
+    setLoading(true);
+    Promise.all([api("payments", {
       jobId: job.id
-    }).then(r => {
-      setPayments(r && r.payments ? r.payments : []);
-    }).finally(() => setLoadingPayments(false));
+    }), api("expenses", {
+      jobId: job.id
+    })]).then(([p, x]) => {
+      setPayments(p && p.payments ? p.payments : []);
+      setExpenses(x && x.expenses ? x.expenses : []);
+    }).finally(() => setLoading(false));
   }
   useEffect(() => {
-    loadPayments();
+    loadAll();
   }, [job && job.id]);
   function set(f) {
     return v => setForm(prev => ({
@@ -3344,7 +3374,7 @@ function InsuranceFinancialsPanel({
     const patch = {
       ...form
     };
-    INS_FIELD_GROUPS.forEach(g => g.fields.forEach(([key,, type]) => {
+    INSURANCE_DETAILS_GROUPS.forEach(g => g.fields.forEach(([key,, type]) => {
       if (type === "number") patch[key] = patch[key] === "" || patch[key] == null ? null : Number(patch[key]);
     }));
     await onSave(job.id, patch);
@@ -3352,7 +3382,7 @@ function InsuranceFinancialsPanel({
   }
   async function submitPayment() {
     if (!newPayment.amount) return;
-    setAddingPayment(true);
+    setBusy(true);
     await api(null, null, true, {
       action: "addPayment",
       payment: {
@@ -3370,8 +3400,8 @@ function InsuranceFinancialsPanel({
       status: "Expected",
       notes: ""
     });
-    await loadPayments();
-    setAddingPayment(false);
+    await loadAll();
+    setBusy(false);
   }
   async function changePaymentStatus(p, status) {
     await api(null, null, true, {
@@ -3381,7 +3411,7 @@ function InsuranceFinancialsPanel({
         status
       }
     });
-    loadPayments();
+    loadAll();
   }
   async function deletePayment(p) {
     if (!window.confirm("Remove this payment record?")) return;
@@ -3389,13 +3419,55 @@ function InsuranceFinancialsPanel({
       action: "removePayment",
       id: p.id
     });
-    loadPayments();
+    loadAll();
   }
-  const calc = calcInsuranceFinancials(job, payments);
-  const warnings = insWarnings(job, calc);
+  async function submitExpense() {
+    if (!newExpense.amount) return;
+    setBusy(true);
+    await api(null, null, true, {
+      action: "addExpense",
+      expense: {
+        ...newExpense,
+        jobId: job.id,
+        amount: Number(newExpense.amount)
+      }
+    });
+    setNewExpense({
+      date: "",
+      category: EXPENSE_CATEGORIES[0],
+      vendor: "",
+      description: "",
+      amount: "",
+      receiptStatus: "Missing",
+      paymentMethod: "",
+      notes: ""
+    });
+    await loadAll();
+    setBusy(false);
+  }
+  async function changeReceiptStatus(x, receiptStatus) {
+    await api(null, null, true, {
+      action: "updateExpense",
+      id: x.id,
+      patch: {
+        receiptStatus
+      }
+    });
+    loadAll();
+  }
+  async function deleteExpense(x) {
+    if (!window.confirm("Remove this expense record?")) return;
+    await api(null, null, true, {
+      action: "removeExpense",
+      id: x.id
+    });
+    loadAll();
+  }
+  const calc = calcFinancialDashboard(job, payments, expenses);
   return React.createElement("div", {
     style: {
       marginTop: 18,
+      marginBottom: 18,
       borderTop: `2px solid ${RUST}`,
       paddingTop: 14
     }
@@ -3411,16 +3483,20 @@ function InsuranceFinancialsPanel({
   }, React.createElement("div", {
     style: {
       fontFamily: FONT_HEAD,
-      fontSize: 16,
+      fontSize: 17,
       color: INK
     }
-  }, "Insurance Financials"), React.createElement("div", {
+  }, "Project Financials"), React.createElement("div", {
     style: {
       display: "flex",
       gap: 8
     }
   }, React.createElement("button", {
-    onClick: () => openInsuranceInvoice(job, calc),
+    onClick: () => openInsuranceInvoice(job, {
+      insurancePaymentsReceived: calc.insuranceCheckReceived + calc.otherInsuranceReceived,
+      customerPaymentsReceived: calc.deductibleCollected,
+      recoverableDep: calc.recoverableDep
+    }),
     style: {
       background: CARD,
       border: `1px solid ${LINE}`,
@@ -3441,144 +3517,167 @@ function InsuranceFinancialsPanel({
       fontSize: 12.5,
       cursor: "pointer"
     }
-  }, editing ? "Save financials" : "Edit financials"))), warnings.length > 0 && React.createElement("div", {
+  }, editing ? "Save details" : "Edit insurance details"))), loading ? React.createElement("div", {
     style: {
-      background: "#FDF3D9",
-      border: "1px solid #E8C767",
-      borderRadius: 6,
-      padding: "8px 12px",
-      marginBottom: 14
+      fontSize: 12.5,
+      color: MUTE,
+      marginBottom: 12
     }
-  }, warnings.map((w, i) => React.createElement("div", {
-    key: i,
-    style: {
-      fontSize: 12,
-      color: "#5C4600",
-      marginBottom: i < warnings.length - 1 ? 4 : 0
-    }
-  }, "\u26A0 " + w))),
-  // Summary
+  }, "Loading financials...") : null,
+  // Big summary cards
   React.createElement("div", {
     style: {
-      background: CARD,
-      border: `1px solid ${LINE}`,
-      borderRadius: 8,
-      padding: "10px 14px",
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 8,
       marginBottom: 14
     }
-  }, React.createElement(InsRow, {
-    label: "Total covered work (RCV + other structures)",
-    value: fmtMoney(calc.totalCoveredWork),
-    tag: "documented"
-  }), React.createElement(InsRow, {
-    label: "Interest in first check (not contract revenue)",
-    value: fmtMoney(calc.interest),
-    tag: "documented"
-  }), React.createElement(InsRow, {
-    label: "Recoverable depreciation",
-    value: fmtMoney(calc.recoverableDep) + (job.insRecoverableDepreciationReleased === "Yes" ? "" : " (not yet released)"),
-    tag: "documented"
-  }), React.createElement(InsRow, {
-    label: "Net customer deductible",
-    value: fmtMoney(calc.netCustomerDeductible),
-    tag: "calculated"
-  }), React.createElement(InsRow, {
-    label: "Est. cash for roof work (RCV \u2212 deductible + recoverable dep.)",
-    value: fmtMoney(calc.cashForRoofWork),
-    tag: "estimated"
-  }), React.createElement(InsRow, {
-    label: "First check calculated (RCV vigente \u2212 deps \u2212 deductible \u2212 other)",
-    value: fmtMoney(calc.firstCheckCalculated),
-    tag: calc.firstCheckMismatch ? "unconfirmed" : "calculated"
-  }), React.createElement(InsRow, {
-    label: "Total insurance proceeds",
-    value: fmtMoney(calc.totalInsuranceProceeds),
-    tag: "calculated"
-  }), React.createElement(InsRow, {
-    label: "Total collectible",
-    value: fmtMoney(calc.totalCollectible),
-    tag: "calculated"
-  }), React.createElement(InsRow, {
-    label: "Total collected to date",
-    value: fmtMoney(calc.totalCollectedToDate),
-    tag: "calculated"
-  }), React.createElement(InsRow, {
-    label: "Remaining collectible",
-    value: fmtMoney(calc.remainingCollectible),
-    tag: calc.remainingCollectible < 0 ? "unconfirmed" : "calculated"
-  }), React.createElement(InsRow, {
-    label: "PA fee (" + (job.insPAFeeBasis || "not set") + ")",
-    value: calc.paFeeAmount != null ? fmtMoney(calc.paFeeAmount) : "Pending",
-    tag: calc.paFeeAmount != null ? job.insPAFeeStatus === "Confirmed" ? "documented" : "estimated" : "unconfirmed"
-  }), React.createElement(InsRow, {
-    label: "Net amount expected by GAP",
-    value: calc.netExpectedByGap != null ? fmtMoney(calc.netExpectedByGap) : "Pending PA fee",
-    tag: calc.netExpectedByGap != null ? "calculated" : "unconfirmed",
-    big: true
-  }), React.createElement(InsRow, {
-    label: "Estimated GAP profit",
-    value: calc.estimatedGapProfit != null ? fmtMoney(calc.estimatedGapProfit) : "Pending",
-    tag: calc.estimatedGapProfit != null ? "estimated" : "unconfirmed",
-    big: true
-  })), React.createElement("div", {
+  }, React.createElement(BigCard, {
+    label: "Net Project Budget",
+    value: calc.netProjectBudget != null ? fmtMoney(calc.netProjectBudget) : "Pending",
+    color: bigCardColor("neutral", calc)
+  }), React.createElement(BigCard, {
+    label: "Total Collected",
+    value: fmtMoney(calc.totalCollected),
+    color: bigCardColor("neutral", calc)
+  }), React.createElement(BigCard, {
+    label: "Outstanding to Collect",
+    value: fmtMoney(calc.outstandingToCollect),
+    color: bigCardColor("neutral", calc)
+  }), React.createElement(BigCard, {
+    label: "Total Project Cost",
+    value: calc.totalCosts != null ? fmtMoney(calc.totalCosts) : "Pending",
+    color: bigCardColor("neutral", calc)
+  }), React.createElement(BigCard, {
+    label: "Profit / Loss",
+    value: calc.profitLoss != null ? fmtMoney(calc.profitLoss) : "Pending",
+    color: bigCardColor("profit", calc)
+  }), React.createElement(BigCard, {
+    label: "Profit Margin %",
+    value: calc.profitMarginPct != null ? calc.profitMarginPct + "%" : "Pending",
+    color: bigCardColor("profit", calc)
+  })), calc.missingReceiptsTotal > 0 && React.createElement("div", {
     style: {
-      fontFamily: FONT_HEAD,
-      fontSize: 14,
-      color: INK,
-      marginBottom: 8
-    }
-  }, "GAP Contract & Sales Commission"), React.createElement("div", {
-    style: {
-      background: CARD,
-      border: `1px solid ${LINE}`,
-      borderRadius: 8,
-      padding: "10px 14px",
+      fontSize: 11.5,
+      color: "#8A6200",
+      background: "#FDF3D9",
+      padding: "6px 10px",
+      borderRadius: 4,
       marginBottom: 14
     }
-  }, React.createElement(InsRow, {
-    label: "Contract value with GAP",
-    value: fmtMoney(Number(job.contractAmount) || 0),
-    tag: "documented"
-  }), React.createElement(InsRow, {
-    label: "Excluded repairs (not done by GAP)",
-    value: fmtMoney(insNum(job.insExcludedRepairsAmount)),
-    tag: "documented"
-  }), React.createElement(InsRow, {
-    label: "Authorized discounts",
-    value: fmtMoney(insNum(job.insAuthorizedDiscounts)),
-    tag: "documented"
-  }), React.createElement(InsRow, {
-    label: "Non-collectible amount",
-    value: fmtMoney(insNum(job.insNonCollectibleAmount)),
-    tag: "documented"
-  }), React.createElement(InsRow, {
-    label: "Total collectible contract",
-    value: fmtMoney(calc.totalCollectibleContract),
-    tag: "calculated",
-    big: true
-  }), React.createElement(InsRow, {
-    label: "Sales commission (" + calc.commissionPct + "% of collectible contract)",
-    value: fmtMoney(calc.totalCommission),
-    tag: "calculated"
-  }), React.createElement(InsRow, {
-    label: "Advance paid (" + fmtMoney(calc.commissionAdvance) + " default, part of total)",
-    value: job.insCommissionAdvanceDate ? fmtDate(job.insCommissionAdvanceDate) : "Not marked paid",
-    tag: "documented"
-  }), React.createElement(InsRow, {
-    label: "Commission balance owed to rep",
-    value: fmtMoney(calc.commissionBalanceOwed),
-    tag: "calculated",
-    big: true
-  })),
-  // Editable fields
+  }, "\u26A0 Missing Receipts: " + fmtMoney(calc.missingReceiptsTotal)), calc.paFee == null && React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: DANGER_TEXT,
+      background: DANGER_BG,
+      padding: "6px 10px",
+      borderRadius: 4,
+      marginBottom: 14
+    }
+  }, "\u26A0 PA fee basis is pending confirmation \u2014 Net Project Budget can't be finalized yet."),
+  // 4 blocks
+  React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 12,
+      marginBottom: 6
+    }
+  }, React.createElement(BlockCard, {
+    title: "1. Money In"
+  }, React.createElement(MiniRow, {
+    label: "Insurance check received",
+    value: fmtMoney(calc.insuranceCheckReceived)
+  }), React.createElement(MiniRow, {
+    label: "Deductible collected",
+    value: fmtMoney(calc.deductibleCollected)
+  }), React.createElement(MiniRow, {
+    label: "Recoverable dep. received",
+    value: fmtMoney(calc.recoverableDepReceived)
+  }), calc.otherInsuranceReceived > 0 && React.createElement(MiniRow, {
+    label: "Other insurance received",
+    value: fmtMoney(calc.otherInsuranceReceived),
+    sub: true
+  }), React.createElement(MiniRow, {
+    label: "Total Collected",
+    value: fmtMoney(calc.totalCollected)
+  }), React.createElement(MiniRow, {
+    label: "Outstanding to collect",
+    value: fmtMoney(calc.outstandingToCollect),
+    sub: true
+  })), React.createElement(BlockCard, {
+    title: "2. Project Budget"
+  }, React.createElement(MiniRow, {
+    label: "Settlement + Interest",
+    value: fmtMoney(calc.settlementPlusInterest),
+    sub: true
+  }), React.createElement(MiniRow, {
+    label: "Expected revenue",
+    value: fmtMoney(calc.expectedRevenue)
+  }), React.createElement(MiniRow, {
+    label: "PA Fee (" + calc.paPct + "%)",
+    value: calc.paFee != null ? fmtMoney(calc.paFee) : "Pending"
+  }), React.createElement(MiniRow, {
+    label: "Appraisal Fee",
+    value: fmtMoney(calc.appraisalFee)
+  }), calc.otherClaimFees > 0 && React.createElement(MiniRow, {
+    label: "Other claim fees",
+    value: fmtMoney(calc.otherClaimFees),
+    sub: true
+  }), React.createElement(MiniRow, {
+    label: "Net Project Budget",
+    value: calc.netProjectBudget != null ? fmtMoney(calc.netProjectBudget) : "Pending"
+  })), React.createElement(BlockCard, {
+    title: "3. Project Costs"
+  }, React.createElement(MiniRow, {
+    label: "Sales commission (" + calc.commissionPct + "%)",
+    value: calc.totalCommission != null ? fmtMoney(calc.totalCommission) : "Pending"
+  }), React.createElement(MiniRow, {
+    label: "Advance paid / Remaining",
+    value: fmtMoney(calc.commissionAdvance) + " / " + (calc.remainingCommission != null ? fmtMoney(calc.remainingCommission) : "\u2014"),
+    sub: true
+  }), React.createElement(MiniRow, {
+    label: "Materials",
+    value: fmtMoney(calc.materialsCost)
+  }), React.createElement(MiniRow, {
+    label: "Labor",
+    value: fmtMoney(calc.laborCost)
+  }), React.createElement(MiniRow, {
+    label: "Other expenses",
+    value: fmtMoney(calc.otherExpensesCost)
+  }), React.createElement(MiniRow, {
+    label: "Total Costs",
+    value: calc.totalCosts != null ? fmtMoney(calc.totalCosts) : "Pending"
+  })), React.createElement(BlockCard, {
+    title: "4. Final Result"
+  }, React.createElement(MiniRow, {
+    label: "Net Project Budget",
+    value: calc.netProjectBudget != null ? fmtMoney(calc.netProjectBudget) : "Pending",
+    sub: true
+  }), React.createElement(MiniRow, {
+    label: "Total Costs",
+    value: calc.totalCosts != null ? fmtMoney(calc.totalCosts) : "Pending",
+    sub: true
+  }), React.createElement(MiniRow, {
+    label: "Profit / Loss",
+    value: calc.profitLoss != null ? fmtMoney(calc.profitLoss) : "Pending"
+  }), React.createElement(MiniRow, {
+    label: "Profit Margin %",
+    value: calc.profitMarginPct != null ? calc.profitMarginPct + "%" : "Pending"
+  }), React.createElement(MiniRow, {
+    label: "Outstanding to collect",
+    value: fmtMoney(calc.outstandingToCollect),
+    sub: true
+  }))),
+  // Editable Insurance Details fields (only when editing)
   editing && React.createElement("div", {
     style: {
       background: "#EEECE4",
       borderRadius: 6,
       padding: 12,
-      marginBottom: 14
+      marginTop: 14
     }
-  }, INS_FIELD_GROUPS.map(g => React.createElement("div", {
+  }, INSURANCE_DETAILS_GROUPS.map(g => React.createElement("div", {
     key: g.title,
     style: {
       marginBottom: 12
@@ -3600,21 +3699,233 @@ function InsuranceFinancialsPanel({
     options: options,
     onChange: set(key)
   }))))),
-  // Payment ledger
-  React.createElement("div", {
+  // Insurance Details (collapsed, read view)
+  React.createElement(Accordion, {
+    title: "Insurance Details"
+  }, INSURANCE_DETAILS_GROUPS.map(g => React.createElement("div", {
+    key: g.title,
     style: {
-      fontFamily: FONT_HEAD,
-      fontSize: 14,
-      color: INK,
-      marginTop: 16,
-      marginBottom: 8
+      marginBottom: 10
     }
-  }, "Payment ledger"), loadingPayments ? React.createElement("div", {
+  }, React.createElement("div", {
     style: {
+      fontSize: 11,
+      fontWeight: 700,
+      textTransform: "uppercase",
+      color: MUTE,
+      marginBottom: 4
+    }
+  }, g.title), g.fields.map(([key, label, type]) => React.createElement(MiniRow, {
+    key: key,
+    label: label,
+    value: type === "number" ? fmtMoney(insNum(job[key])) : job[key] || "\u2014"
+  }))))),
+  // Expense Details (collapsed)
+  React.createElement(Accordion, {
+    title: "Expense Details (" + expenses.length + ")"
+  }, React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      overflow: "hidden",
+      marginBottom: 12
+    }
+  }, expenses.length === 0 && React.createElement("div", {
+    style: {
+      padding: 14,
+      textAlign: "center",
+      color: MUTE,
+      fontSize: 12.5
+    }
+  }, "No expenses recorded yet."), expenses.map(x => React.createElement("div", {
+    key: x.id,
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "8px 12px",
+      borderBottom: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }, React.createElement("div", null, React.createElement("div", {
+    style: {
+      fontWeight: 600
+    }
+  }, x.category + " \u2014 " + fmtMoney(insNum(x.amount)) + (x.vendor ? " \u00b7 " + x.vendor : "")), React.createElement("div", {
+    style: {
+      color: MUTE,
+      fontSize: 11
+    }
+  }, (x.date || "no date") + (x.description ? " \u00b7 " + x.description : ""))), React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6
+    }
+  }, React.createElement("select", {
+    value: x.receiptStatus,
+    onChange: e => changeReceiptStatus(x, e.target.value),
+    style: {
+      fontSize: 11.5,
+      padding: "4px 6px",
+      borderRadius: 4,
+      border: `1px solid ${LINE}`,
+      background: x.receiptStatus === "Missing" ? DANGER_BG : x.receiptStatus === "Available" ? OK_BG : "#FDF3D9"
+    }
+  }, RECEIPT_STATUSES.map(s => React.createElement("option", {
+    key: s,
+    value: s
+  }, s))), React.createElement("button", {
+    onClick: () => deleteExpense(x),
+    style: {
+      background: "none",
+      border: "none",
+      color: DANGER_TEXT,
+      cursor: "pointer",
+      fontSize: 13
+    }
+  }, "\u2715"))))), React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      padding: 12
+    }
+  }, React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 700,
+      color: MUTE,
+      marginBottom: 8,
+      textTransform: "uppercase"
+    }
+  }, "Add expense"), React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap"
+    }
+  }, React.createElement("input", {
+    type: "date",
+    value: newExpense.date,
+    onChange: e => setNewExpense(p => ({
+      ...p,
+      date: e.target.value
+    })),
+    style: {
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }), React.createElement("select", {
+    value: newExpense.category,
+    onChange: e => setNewExpense(p => ({
+      ...p,
+      category: e.target.value
+    })),
+    style: {
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }, EXPENSE_CATEGORIES.map(c => React.createElement("option", {
+    key: c,
+    value: c
+  }, c))), React.createElement("input", {
+    type: "text",
+    placeholder: "Vendor",
+    value: newExpense.vendor,
+    onChange: e => setNewExpense(p => ({
+      ...p,
+      vendor: e.target.value
+    })),
+    style: {
+      width: 110,
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }), React.createElement("input", {
+    type: "text",
+    placeholder: "Description",
+    value: newExpense.description,
+    onChange: e => setNewExpense(p => ({
+      ...p,
+      description: e.target.value
+    })),
+    style: {
+      width: 140,
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }), React.createElement("input", {
+    type: "number",
+    placeholder: "Amount",
+    value: newExpense.amount,
+    onChange: e => setNewExpense(p => ({
+      ...p,
+      amount: e.target.value
+    })),
+    style: {
+      width: 90,
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }), React.createElement("select", {
+    value: newExpense.receiptStatus,
+    onChange: e => setNewExpense(p => ({
+      ...p,
+      receiptStatus: e.target.value
+    })),
+    style: {
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }, RECEIPT_STATUSES.map(s => React.createElement("option", {
+    key: s,
+    value: s
+  }, s))), React.createElement("input", {
+    type: "text",
+    placeholder: "Payment method",
+    value: newExpense.paymentMethod,
+    onChange: e => setNewExpense(p => ({
+      ...p,
+      paymentMethod: e.target.value
+    })),
+    style: {
+      width: 100,
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }), React.createElement("button", {
+    onClick: submitExpense,
+    disabled: busy || !newExpense.amount,
+    style: {
+      padding: "7px 14px",
+      borderRadius: 5,
+      border: "none",
+      background: RUST,
+      color: "#fff",
       fontSize: 12.5,
-      color: MUTE
+      cursor: "pointer"
     }
-  }, "Loading payments...") : React.createElement("div", {
+  }, busy ? "Adding..." : "Add")))),
+  // Payment ledger (collapsed too, since it's detail-level like Insurance/Expense Details)
+  React.createElement(Accordion, {
+    title: "Payment Ledger (" + payments.length + ")"
+  }, React.createElement("div", {
     style: {
       background: CARD,
       border: `1px solid ${LINE}`,
@@ -3643,7 +3954,7 @@ function InsuranceFinancialsPanel({
     style: {
       fontWeight: 600
     }
-  }, p.type + " \u2014 " + fmtMoney(Number(p.amount) || 0)), React.createElement("div", {
+  }, p.type + " \u2014 " + fmtMoney(insNum(p.amount))), React.createElement("div", {
     style: {
       color: MUTE,
       fontSize: 11
@@ -3786,7 +4097,7 @@ function InsuranceFinancialsPanel({
     value: s
   }, s))), React.createElement("button", {
     onClick: submitPayment,
-    disabled: addingPayment || !newPayment.amount,
+    disabled: busy || !newPayment.amount,
     style: {
       padding: "7px 14px",
       borderRadius: 5,
@@ -3796,7 +4107,7 @@ function InsuranceFinancialsPanel({
       fontSize: 12.5,
       cursor: "pointer"
     }
-  }, addingPayment ? "Adding..." : "Add"))));
+  }, busy ? "Adding..." : "Add")))));
 }
 function buildInsuranceInvoiceHTML(job, calc) {
   const today = new Date().toLocaleDateString("en-US", {
