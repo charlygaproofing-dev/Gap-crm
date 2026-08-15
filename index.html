@@ -3081,18 +3081,30 @@ function calcFinancialDashboard(job, payments, expenses) {
   const settlement = insNum(job.insSettlementAmount);
   const interest = insNum(job.insInterestInFirstCheck);
   const settlementPlusInterest = round2(settlement + interest);
-  const initialCheck = insNum(job.insFirstCheck);
   const deductible = insNum(job.insDeductible);
   const recoverableDep = insNum(job.insRecoverableDepreciation);
+  const nonRecoverableDep = insNum(job.insNonRecoverableDepreciation);
+  const priorPayments = insNum(job.insPriorPayments);
+  // Initial Insurance Check is CALCULATED, not manually entered: the
+  // insurer pays out the full settlement minus what it's holding back
+  // (depreciation), minus the deductible (customer's share), minus
+  // anything already sent as a prior payment.
+  const initialCheck = round2(settlementPlusInterest - recoverableDep - deductible - nonRecoverableDep - priorPayments);
   const supplements = insNum(job.insSupplementsApproved);
   const ordinanceLaw = job.insOrdinanceLawEligible === "Yes" ? insNum(job.insOrdinanceLaw) : 0;
-  const expectedRevenue = round2(initialCheck + deductible + recoverableDep + supplements + ordinanceLaw);
+  const expectedRevenueCalculated = round2(initialCheck + deductible + recoverableDep + supplements + ordinanceLaw);
+  const expectedRevenueOverride = job.insExpectedRevenueOverride != null && job.insExpectedRevenueOverride !== "" ? insNum(job.insExpectedRevenueOverride) : null;
+  const expectedRevenue = expectedRevenueOverride != null ? expectedRevenueOverride : expectedRevenueCalculated;
   const paPct = job.insPAPercentage != null && job.insPAPercentage !== "" ? insNum(job.insPAPercentage) : 10;
   let paFee;
   if (job.insPAFeeBasis === "Manual amount") paFee = insNum(job.insPAFeeManualAmount);else if (job.insPAFeeBasis === "Pending confirmation") paFee = null;else paFee = round2(settlementPlusInterest * (paPct / 100));
   const appraisalFee = insNum(job.insAppraisalFee);
   const otherClaimFees = insNum(job.insOtherClaimFees);
-  const netProjectBudget = paFee != null ? round2(expectedRevenue - paFee - appraisalFee - otherClaimFees) : null;
+  const netProjectBudgetCalculated = paFee != null ? round2(expectedRevenue - paFee - appraisalFee - otherClaimFees) : null;
+  const netProjectBudgetOverride = job.insNetProjectBudgetOverride != null && job.insNetProjectBudgetOverride !== "" ? insNum(job.insNetProjectBudgetOverride) : null;
+  const netProjectBudget = netProjectBudgetOverride != null ? netProjectBudgetOverride : netProjectBudgetCalculated;
+  const usingExpectedRevenueOverride = expectedRevenueOverride != null;
+  const usingNetProjectBudgetOverride = netProjectBudgetOverride != null;
   const commissionPct = job.insCommissionPct != null && job.insCommissionPct !== "" ? insNum(job.insCommissionPct) : 10;
   const commissionAdvance = job.insCommissionAdvance != null && job.insCommissionAdvance !== "" ? insNum(job.insCommissionAdvance) : 500;
   const totalCommission = netProjectBudget != null ? round2(netProjectBudget * (commissionPct / 100)) : null;
@@ -3122,11 +3134,15 @@ function calcFinancialDashboard(job, payments, expenses) {
     supplements,
     ordinanceLaw,
     expectedRevenue,
+    expectedRevenueCalculated,
+    usingExpectedRevenueOverride,
     paPct,
     paFee,
     appraisalFee,
     otherClaimFees,
     netProjectBudget,
+    netProjectBudgetCalculated,
+    usingNetProjectBudgetOverride,
     commissionPct,
     commissionAdvance,
     totalCommission,
@@ -3201,6 +3217,43 @@ function BigCard({
     }
   }, value));
 }
+function InsTag({
+  kind,
+  children
+}) {
+  const styles = {
+    documented: {
+      bg: OK_BG,
+      text: OK_TEXT
+    },
+    calculated: {
+      bg: "#E6F1FB",
+      text: "#0C447C"
+    },
+    estimated: {
+      bg: "#FDF3D9",
+      text: "#8A6200"
+    },
+    unconfirmed: {
+      bg: DANGER_BG,
+      text: DANGER_TEXT
+    }
+  };
+  const s = styles[kind] || styles.calculated;
+  return React.createElement("span", {
+    style: {
+      fontSize: 10,
+      fontWeight: 600,
+      textTransform: "uppercase",
+      letterSpacing: ".03em",
+      background: s.bg,
+      color: s.text,
+      padding: "2px 6px",
+      borderRadius: 4,
+      marginLeft: 6
+    }
+  }, children);
+}
 function MiniRow({
   label,
   value,
@@ -3224,6 +3277,144 @@ function MiniRow({
       color: sub ? MUTE : INK
     }
   }, value));
+}
+
+// A row showing a calculated value, with an edit icon to type in a manual
+// override. When overridden, the override always wins and is clearly
+// tagged so it's never mistaken for the calculated number.
+function OverrideRow({
+  label,
+  calculatedValue,
+  currentValue,
+  isOverridden,
+  fieldKey,
+  jobId,
+  onSave
+}) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(currentValue != null ? String(currentValue) : "");
+  const [saving, setSaving] = useState(false);
+  async function saveOverride() {
+    setSaving(true);
+    const patch = {};
+    patch[fieldKey] = val === "" ? null : Number(val);
+    await onSave(jobId, patch);
+    setSaving(false);
+    setEditing(false);
+  }
+  async function clearOverride() {
+    setSaving(true);
+    const patch = {};
+    patch[fieldKey] = null;
+    await onSave(jobId, patch);
+    setSaving(false);
+    setEditing(false);
+  }
+  if (editing) {
+    return React.createElement("div", {
+      style: {
+        padding: "6px 0",
+        borderBottom: `1px solid ${LINE}`
+      }
+    }, React.createElement("div", {
+      style: {
+        fontSize: 13,
+        marginBottom: 4
+      }
+    }, label + " \u2014 manual override"), React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6
+      }
+    }, React.createElement("input", {
+      type: "number",
+      step: "0.01",
+      value: val,
+      onChange: e => setVal(e.target.value),
+      placeholder: "Leave blank to use calculated",
+      style: {
+        flex: 1,
+        padding: "5px 7px",
+        borderRadius: 4,
+        border: `1px solid ${LINE}`,
+        fontSize: 12.5
+      }
+    }), React.createElement("button", {
+      onClick: saveOverride,
+      disabled: saving,
+      style: {
+        padding: "5px 10px",
+        borderRadius: 4,
+        border: "none",
+        background: RUST,
+        color: "#fff",
+        fontSize: 11.5,
+        cursor: "pointer"
+      }
+    }, "Save"), isOverridden && React.createElement("button", {
+      onClick: clearOverride,
+      disabled: saving,
+      style: {
+        padding: "5px 10px",
+        borderRadius: 4,
+        border: `1px solid ${LINE}`,
+        background: "#fff",
+        color: MUTE,
+        fontSize: 11.5,
+        cursor: "pointer"
+      }
+    }, "Use calc."), React.createElement("button", {
+      onClick: () => setEditing(false),
+      style: {
+        padding: "5px 10px",
+        borderRadius: 4,
+        border: "none",
+        background: "none",
+        color: MUTE,
+        fontSize: 11.5,
+        cursor: "pointer"
+      }
+    }, "\u2715")));
+  }
+  return React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "6px 0",
+      borderBottom: `1px solid ${LINE}`,
+      fontSize: 13
+    }
+  }, React.createElement("span", {
+    style: {
+      color: INK
+    }
+  }, label), React.createElement("span", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6
+    }
+  }, React.createElement("span", {
+    style: {
+      fontWeight: 600,
+      color: INK
+    }
+  }, currentValue != null ? fmtMoney(currentValue) : "Pending"), isOverridden && React.createElement(InsTag, {
+    kind: "unconfirmed"
+  }, "OVERRIDE"), React.createElement("button", {
+    onClick: () => {
+      setVal(currentValue != null ? String(currentValue) : "");
+      setEditing(true);
+    },
+    style: {
+      background: "none",
+      border: "none",
+      color: MUTE,
+      cursor: "pointer",
+      fontSize: 12
+    }
+  }, "\u270E")));
 }
 function BlockCard({
   title,
@@ -3259,7 +3450,7 @@ const INSURANCE_DETAILS_GROUPS = [{
   fields: [["insDeductible", "Deductible", "number"], ["insDeductibleReduction", "Deductible reduction/credit", "number"]]
 }, {
   title: "Insurance payments",
-  fields: [["insPriorPayments", "Prior payments", "number"], ["insFirstCheck", "Initial insurance check", "number"], ["insSupplementsApproved", "Supplemental payments", "number"], ["insOrdinanceLaw", "Ordinance and Law amount", "number"], ["insOrdinanceLawEligible", "O&L approved & collectible?", "yesno"]]
+  fields: [["insPriorPayments", "Prior payments", "number"], ["insSupplementsApproved", "Supplemental payments", "number"], ["insOrdinanceLaw", "Ordinance and Law amount", "number"], ["insOrdinanceLawEligible", "O&L approved & collectible?", "yesno"]]
 }, {
   title: "Claim expenses",
   fields: [["insPAFeeBasis", "PA fee basis", "select", ["Percent of settlement+interest", "Manual amount", "Pending confirmation"]], ["insPAPercentage", "PA fee % (default 10%)", "number"], ["insPAFeeManualAmount", "PA fee manual amount", "number"], ["insPAFeeStatus", "PA fee status", "select", ["Confirmed", "Estimated", "Pending"]], ["insAppraisalFee", "Appraisal fee", "number"], ["insOtherClaimFees", "Other claim fees", "number"]]
@@ -3612,8 +3803,17 @@ function InsuranceFinancialsPanel({
     value: fmtMoney(calc.settlementPlusInterest),
     sub: true
   }), React.createElement(MiniRow, {
+    label: "Initial insurance check (calc.)",
+    value: fmtMoney(calc.initialCheck),
+    sub: true
+  }), React.createElement(OverrideRow, {
     label: "Expected revenue",
-    value: fmtMoney(calc.expectedRevenue)
+    calculatedValue: calc.expectedRevenueCalculated,
+    currentValue: calc.expectedRevenue,
+    isOverridden: calc.usingExpectedRevenueOverride,
+    fieldKey: "insExpectedRevenueOverride",
+    jobId: job.id,
+    onSave: onSave
   }), React.createElement(MiniRow, {
     label: "PA Fee (" + calc.paPct + "%)",
     value: calc.paFee != null ? fmtMoney(calc.paFee) : "Pending"
@@ -3624,9 +3824,14 @@ function InsuranceFinancialsPanel({
     label: "Other claim fees",
     value: fmtMoney(calc.otherClaimFees),
     sub: true
-  }), React.createElement(MiniRow, {
+  }), React.createElement(OverrideRow, {
     label: "Net Project Budget",
-    value: calc.netProjectBudget != null ? fmtMoney(calc.netProjectBudget) : "Pending"
+    calculatedValue: calc.netProjectBudgetCalculated,
+    currentValue: calc.netProjectBudget,
+    isOverridden: calc.usingNetProjectBudgetOverride,
+    fieldKey: "insNetProjectBudgetOverride",
+    jobId: job.id,
+    onSave: onSave
   })), React.createElement(BlockCard, {
     title: "3. Project Costs"
   }, React.createElement(MiniRow, {
