@@ -3432,8 +3432,14 @@ function calcFinancialDashboard(job, payments, expenses) {
   // Include the legacy single "Material cost" job field (if set) plus any
   // itemized Materials entries logged in Expense Details, so nothing
   // captured the old way gets silently dropped from the total.
-  const materialsCost = round2(insNum(job.materialCost) + expList.filter(e => e.category === "Materials").reduce((s, e) => s + insNum(e.amount), 0));
-  const laborCost = round2(insNum(job.laborCost) + expList.filter(e => e.category === "Labor").reduce((s, e) => s + insNum(e.amount), 0));
+  // Materials/Labor: prefer itemized Expense Details entries when any
+  // exist (more accurate, per-purchase). Only fall back to the legacy
+  // single job-level field when NO itemized entries have been logged yet
+  // \u2014 never add both together, or the same cost gets counted twice.
+  const materialsFromExpenses = round2(expList.filter(e => e.category === "Materials").reduce((s, e) => s + insNum(e.amount), 0));
+  const materialsCost = materialsFromExpenses > 0 ? materialsFromExpenses : insNum(job.materialCost);
+  const laborFromExpenses = round2(expList.filter(e => e.category === "Labor").reduce((s, e) => s + insNum(e.amount), 0));
+  const laborCost = laborFromExpenses > 0 ? laborFromExpenses : insNum(job.laborCost);
   const otherExpensesCost = round2(expList.filter(e => e.category !== "Materials" && e.category !== "Labor").reduce((s, e) => s + insNum(e.amount), 0));
   const totalCosts = totalCommission != null ? round2(totalCommission + materialsCost + laborCost + otherExpensesCost) : null;
   const profitLoss = netProjectBudget != null && totalCosts != null ? round2(netProjectBudget - totalCosts) : null;
@@ -3861,9 +3867,13 @@ function InsuranceFinancialsPanel({
   });
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    setForm({
+    const clean = {
       ...job
-    });
+    };
+    INSURANCE_DETAILS_GROUPS.forEach(g => g.fields.forEach(([key,, type]) => {
+      if (type === "date" && clean[key]) clean[key] = String(clean[key]).slice(0, 10);
+    }));
+    setForm(clean);
   }, [job && job.id]);
   function loadAll() {
     setLoading(true);
@@ -3891,6 +3901,7 @@ function InsuranceFinancialsPanel({
     };
     INSURANCE_DETAILS_GROUPS.forEach(g => g.fields.forEach(([key,, type]) => {
       if (type === "number") patch[key] = patch[key] === "" || patch[key] == null ? null : Number(patch[key]);
+      if (type === "date" && patch[key]) patch[key] = String(patch[key]).slice(0, 10);
     }));
     await onSave(job.id, patch);
     setEditing(false);
