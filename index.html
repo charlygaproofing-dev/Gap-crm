@@ -2616,7 +2616,14 @@ function App() {
       color: r.netOwed < 0 ? DANGER_TEXT : INK,
       fontWeight: 500
     }
-  }, fmtSigned(r.netOwed)))))))), view === "payroll" && /*#__PURE__*/React.createElement(PayrollLedgerModule, { jobs: jobs || [] }), view === "financial" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, fmtSigned(r.netOwed)))))))), view === "payroll" && /*#__PURE__*/React.createElement(PayrollLedgerModule, { jobs: jobs || [] }), view === "financial" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(CompanyDashboard, { jobs: jobs || [] }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 14,
+      color: INK,
+      marginBottom: 8
+    }
+  }, "Per-Project Detail"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: MUTE,
@@ -5263,6 +5270,294 @@ function AttentionDashboard({
       fontSize: 13
     }
   }, "Nothing needs attention right now. \uD83C\uDF89"));
+}
+function companyFmt(n) {
+  const num = Number(n) || 0;
+  return (num < 0 ? "-$" : "$") + Math.abs(num).toFixed(2);
+}
+const DATE_RANGE_PRESETS = [{
+  key: "7d",
+  label: "Last 7 days",
+  days: 7
+}, {
+  key: "30d",
+  label: "Last 30 days",
+  days: 30
+}, {
+  key: "90d",
+  label: "Last 90 days",
+  days: 90
+}, {
+  key: "ytd",
+  label: "Year to date",
+  days: null
+}, {
+  key: "all",
+  label: "All time",
+  days: null
+}];
+function rangeBounds(presetKey) {
+  const now = new Date();
+  if (presetKey === "all") return {
+    start: null,
+    end: null
+  };
+  if (presetKey === "ytd") return {
+    start: new Date(now.getFullYear(), 0, 1),
+    end: now
+  };
+  const preset = DATE_RANGE_PRESETS.find(p => p.key === presetKey);
+  const start = new Date(now.getTime() - (preset ? preset.days : 30) * 86400000);
+  return {
+    start,
+    end: now
+  };
+}
+function inRange(dateStr, bounds) {
+  if (!dateStr) return false;
+  if (!bounds.start) return true;
+  const d = new Date(dateStr + "T00:00:00");
+  if (isNaN(d.getTime())) return false;
+  return d >= bounds.start && d <= bounds.end;
+}
+function CompanyDashboard({
+  jobs
+}) {
+  const [preset, setPreset] = useState("30d");
+  const [allPayments, setAllPayments] = useState(null);
+  const [allExpenses, setAllExpenses] = useState(null);
+  const [allLedger, setAllLedger] = useState(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([api("payments", {}), api("expenses", {}), api("commissionLedger", {})]).then(([p, x, l]) => {
+      setAllPayments(p && p.payments ? p.payments : []);
+      setAllExpenses(x && x.expenses ? x.expenses : []);
+      setAllLedger(l && l.ledger ? l.ledger : []);
+    }).finally(() => setLoading(false));
+  }, []);
+  const bounds = rangeBounds(preset);
+  const jobList = jobs || [];
+
+  // Sales
+  const contractsInRange = jobList.filter(j => inRange(j.dateEntered, bounds));
+  const totalContractValue = contractsInRange.reduce((s, j) => s + (Number(j.contractAmount) || 0), 0);
+  const insuranceJobsInRange = contractsInRange.filter(j => j.jobType === "Insurance");
+  const closedInRange = jobList.filter(j => j.closed === "Yes" && inRange(j.lastUpdated, bounds));
+  const activePipeline = jobList.filter(j => j.closed !== "Yes").length;
+
+  // Production
+  const scheduled = jobList.filter(j => j.stage === "Scheduled for Install" && j.closed !== "Yes").length;
+  const inProduction = jobList.filter(j => j.stage === "In Production" && j.closed !== "Yes").length;
+  const healthScored = jobList.filter(j => j.closed !== "Yes").map(j => computeJobHealth(j));
+  const blockedCount = healthScored.filter(h => h.status === "red").length;
+
+  // Revenue (from Payments ledger, company-wide, in range)
+  const paymentsInRange = (allPayments || []).filter(p => inRange(p.date, bounds) && ["Received", "Deposited", "Cleared"].includes(p.status));
+  const insurancePaymentTypes = ["First insurance check", "Recoverable depreciation check", "Supplement", "Ordinance and Law"];
+  const insuranceCollected = paymentsInRange.filter(p => insurancePaymentTypes.includes(p.type)).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const customerCollected = paymentsInRange.filter(p => !insurancePaymentTypes.includes(p.type)).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const totalCollected = insuranceCollected + customerCollected;
+
+  // Costs (from Expenses, company-wide, in range)
+  const expensesInRange = (allExpenses || []).filter(x => inRange(x.date, bounds));
+  const totalExpenses = expensesInRange.reduce((s, x) => s + (Number(x.amount) || 0), 0);
+  const missingReceipts = expensesInRange.filter(x => x.receiptStatus === "Missing").reduce((s, x) => s + (Number(x.amount) || 0), 0);
+
+  // Payroll (from Commission Ledger, company-wide, in range)
+  const ledgerInRange = (allLedger || []).filter(t => inRange(t.date, bounds));
+  const advancesPaid = ledgerInRange.filter(t => t.type === "Advance paid").reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  const finalCommissionsPaid = ledgerInRange.filter(t => t.type === "Final commission paid").reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  const chargebacks = ledgerInRange.filter(t => t.type === "Chargeback").reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  const outstandingCommission = (allLedger || []).filter(t => t.status !== "Paid").reduce((s, t) => s + (Number(t.amount) || 0), 0);
+
+  // Simplified operational profitability: cash collected minus cash spent
+  // (expenses + commissions paid). This is a cash view, not accrual.
+  const cashProfit = totalCollected - totalExpenses - advancesPaid - finalCommissionsPaid;
+  return React.createElement("div", {
+    style: {
+      marginBottom: 24
+    }
+  }, React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 12,
+      flexWrap: "wrap",
+      gap: 8
+    }
+  }, React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 17,
+      color: INK
+    }
+  }, "Company Dashboard"), React.createElement("select", {
+    value: preset,
+    onChange: e => setPreset(e.target.value),
+    style: {
+      padding: "6px 10px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }, DATE_RANGE_PRESETS.map(p => React.createElement("option", {
+    key: p.key,
+    value: p.key
+  }, p.label)))), loading && React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: MUTE,
+      marginBottom: 10
+    }
+  }, "Loading company data..."), React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: MUTE,
+      marginBottom: 10
+    }
+  }, "\u201CProjected\u201D uses job-level data (contracts, pipeline); \u201CActual\u201D comes from logged payments, expenses, and payroll \u2014 the two are never mixed together below."), React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      fontWeight: 700,
+      textTransform: "uppercase",
+      color: MUTE,
+      margin: "12px 0 6px"
+    }
+  }, "Sales (projected)"), React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      marginBottom: 10,
+      flexWrap: "wrap"
+    }
+  }, React.createElement(KPICard, {
+    label: "Contracts signed",
+    value: String(contractsInRange.length)
+  }), React.createElement(KPICard, {
+    label: "Total contract value",
+    value: companyFmt(totalContractValue)
+  }), React.createElement(KPICard, {
+    label: "Insurance jobs",
+    value: String(insuranceJobsInRange.length)
+  }), React.createElement(KPICard, {
+    label: "Active pipeline",
+    value: String(activePipeline)
+  })), React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      fontWeight: 700,
+      textTransform: "uppercase",
+      color: MUTE,
+      margin: "12px 0 6px"
+    }
+  }, "Production (current)"), React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      marginBottom: 10,
+      flexWrap: "wrap"
+    }
+  }, React.createElement(KPICard, {
+    label: "Scheduled for install",
+    value: String(scheduled)
+  }), React.createElement(KPICard, {
+    label: "In production",
+    value: String(inProduction)
+  }), React.createElement(KPICard, {
+    label: "Closed in period",
+    value: String(closedInRange.length)
+  }), React.createElement(KPICard, {
+    label: "Needs attention",
+    value: String(blockedCount)
+  })), React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      fontWeight: 700,
+      textTransform: "uppercase",
+      color: MUTE,
+      margin: "12px 0 6px"
+    }
+  }, "Revenue (actual, from logged payments)"), React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      marginBottom: 10,
+      flexWrap: "wrap"
+    }
+  }, React.createElement(KPICard, {
+    label: "Insurance payments collected",
+    value: companyFmt(insuranceCollected)
+  }), React.createElement(KPICard, {
+    label: "Customer payments collected",
+    value: companyFmt(customerCollected)
+  }), React.createElement(KPICard, {
+    label: "Total collected",
+    value: companyFmt(totalCollected)
+  })), React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      fontWeight: 700,
+      textTransform: "uppercase",
+      color: MUTE,
+      margin: "12px 0 6px"
+    }
+  }, "Costs & Payroll (actual, from logged entries)"), React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      marginBottom: 10,
+      flexWrap: "wrap"
+    }
+  }, React.createElement(KPICard, {
+    label: "Total expenses",
+    value: companyFmt(totalExpenses)
+  }), React.createElement(KPICard, {
+    label: "Advances paid",
+    value: companyFmt(advancesPaid)
+  }), React.createElement(KPICard, {
+    label: "Final commissions paid",
+    value: companyFmt(finalCommissionsPaid)
+  }), chargebacks !== 0 && React.createElement(KPICard, {
+    label: "Chargebacks recovered",
+    value: companyFmt(chargebacks)
+  }), React.createElement(KPICard, {
+    label: "Outstanding commission liability",
+    value: companyFmt(outstandingCommission)
+  })), missingReceipts > 0 && React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      color: "#8A6200",
+      background: "#FDF3D9",
+      padding: "6px 10px",
+      borderRadius: 4,
+      marginBottom: 10
+    }
+  }, "\u26A0 Missing Receipts in this period: " + companyFmt(missingReceipts)), React.createElement("div", {
+    style: {
+      fontSize: 11.5,
+      fontWeight: 700,
+      textTransform: "uppercase",
+      color: MUTE,
+      margin: "12px 0 6px"
+    }
+  }, "Cash Profitability (actual, simplified)"), React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      marginBottom: 6,
+      flexWrap: "wrap"
+    }
+  }, React.createElement(KPICard, {
+    label: "Cash collected \u2212 spent \u2212 payroll paid",
+    value: companyFmt(cashProfit)
+  })), React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: MUTE
+    }
+  }, "This is a cash-flow view (money actually collected and paid out), not per-project accrual profit \u2014 see each project's own Net Project Budget for that."));
 }
 ReactDOM.createRoot(document.getElementById('root')).render(/*#__PURE__*/React.createElement(App, null));
 </script>
