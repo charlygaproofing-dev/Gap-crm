@@ -2075,6 +2075,10 @@ function App() {
       textTransform: "uppercase"
     }
   }, "Pipeline CRM · San Antonio, TX")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Tab, {
+    active: view === "attention",
+    onClick: () => setView("attention"),
+    label: "🚦 Attention"
+  }), /*#__PURE__*/React.createElement(Tab, {
     active: view === "kanban",
     onClick: () => setView("kanban"),
     label: "Board"
@@ -2542,7 +2546,7 @@ function App() {
         borderRadius: 4
       }
     }, "⚠ ", flags.length, " issue(s)")));
-  })))), view === "payroll" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  })))), view === "attention" && /*#__PURE__*/React.createElement(AttentionDashboard, { jobs: jobs || [] }), view === "payroll" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 10,
@@ -5016,6 +5020,249 @@ function PayrollLedgerModule({
       }
     }, payrollFmt(net)))));
   }));
+}
+// Project health rules — explicit, not AI-judged, so the reason is always
+// visible. Uses only fields already present on the job list (no extra API
+// calls per job), so this stays fast even with hundreds of jobs.
+function computeJobHealth(job) {
+  const reasons = [];
+  const isClosed = job.closed === "Yes";
+  const isInsurance = job.jobType === "Insurance";
+  const num = v => {
+    const n = Number(v);
+    return isNaN(n) ? 0 : n;
+  };
+  const refDateStr = job.lastUpdated || job.dateEntered;
+  let daysSince = null;
+  if (refDateStr) {
+    const d = new Date(refDateStr + "T00:00:00");
+    if (!isNaN(d.getTime())) daysSince = Math.floor((Date.now() - d.getTime()) / 86400000);
+  }
+  let red = false,
+    yellow = false;
+
+  // RED: missed inspection (scheduled date already passed, stage never moved on)
+  if (job.stage === "Inspection Scheduled" && job.inspectionDateTime) {
+    const dt = new Date(job.inspectionDateTime);
+    if (!isNaN(dt.getTime()) && dt.getTime() < Date.now() - 24 * 3600000) {
+      red = true;
+      reasons.push("Inspection date has passed but stage wasn't updated.");
+    }
+  }
+
+  // RED: closed job but balance still owed
+  if (isClosed && num(job.balanceDue) > 0) {
+    red = true;
+    reasons.push("Job is closed but balance due is " + fmtMoney(num(job.balanceDue)) + ".");
+  }
+
+  // RED: very stale (30+ days, not closed)
+  if (!isClosed && daysSince != null && daysSince >= 30) {
+    red = true;
+    reasons.push("No activity in " + daysSince + " days.");
+  }
+
+  // RED: PA fee still pending confirmation on a job that's well past claim filing
+  const advancedStages = ["Scheduled for Install", "In Production", "Final Walkthrough", "Invoiced"];
+  if (isInsurance && !isClosed && advancedStages.includes(job.stage) && (!job.insPAFeeBasis || job.insPAFeeBasis === "Pending confirmation")) {
+    red = true;
+    reasons.push("PA fee basis still unconfirmed this late in the job \u2014 Net Project Budget is unreliable.");
+  }
+
+  // YELLOW: stale 14-29 days
+  if (!isClosed && !red && daysSince != null && daysSince >= 14) {
+    yellow = true;
+    reasons.push("No activity in " + daysSince + " days.");
+  }
+
+  // YELLOW: recoverable depreciation not released this late in the job
+  if (isInsurance && !isClosed && advancedStages.includes(job.stage) && num(job.insRecoverableDepreciation) > 0 && job.insRecoverableDepreciationReleased !== "Yes") {
+    yellow = true;
+    reasons.push("Recoverable depreciation not yet released.");
+  }
+
+  // YELLOW: missing core insurance numbers once claim is filed
+  if (isInsurance && !isClosed && job.stage && job.stage !== "New Lead" && job.stage !== "Inspection Scheduled" && job.stage !== "Inspection Complete" && (!num(job.insSettlementAmount) || !num(job.insDeductible))) {
+    yellow = true;
+    reasons.push("Missing Settlement or Deductible \u2014 financial dashboard can't be trusted yet.");
+  }
+
+  // YELLOW: completed scope doesn't match award
+  if (isInsurance && job.insCompletedScopeMatchesAward === "No") {
+    yellow = true;
+    reasons.push("Completed scope doesn't match the full insurance award.");
+  }
+  if (red) return {
+    status: "red",
+    reasons
+  };
+  if (yellow) return {
+    status: "yellow",
+    reasons
+  };
+  if (isClosed) return {
+    status: "green",
+    reasons: ["Closed, no open issues."]
+  };
+  if (!job.stage || job.stage === "New Lead") return {
+    status: "gray",
+    reasons: ["Too early to assess."]
+  };
+  return {
+    status: "green",
+    reasons: ["No open issues."]
+  };
+}
+function HealthDot({
+  status
+}) {
+  const colors = {
+    red: DANGER_TEXT,
+    yellow: "#B8860B",
+    green: OK_TEXT,
+    gray: MUTE
+  };
+  return React.createElement("span", {
+    style: {
+      display: "inline-block",
+      width: 9,
+      height: 9,
+      borderRadius: "50%",
+      background: colors[status],
+      marginRight: 6,
+      flex: "none"
+    }
+  });
+}
+function AttentionDashboard({
+  jobs
+}) {
+  const [expanded, setExpanded] = useState(null);
+  const activeJobs = (jobs || []).filter(j => j.closed !== "Yes");
+  const scored = activeJobs.map(j => ({
+    job: j,
+    health: computeJobHealth(j)
+  }));
+  const redJobs = scored.filter(s => s.health.status === "red");
+  const yellowJobs = scored.filter(s => s.health.status === "yellow");
+  const greenCount = scored.filter(s => s.health.status === "green").length;
+  const grayCount = scored.filter(s => s.health.status === "gray").length;
+  function JobAttentionRow({
+    job,
+    health
+  }) {
+    const isOpen = expanded === job.id;
+    return React.createElement("div", {
+      style: {
+        background: CARD,
+        border: `1px solid ${LINE}`,
+        borderRadius: 8,
+        padding: "10px 14px",
+        marginBottom: 8,
+        cursor: "pointer"
+      },
+      onClick: () => setExpanded(isOpen ? null : job.id)
+    }, React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between"
+      }
+    }, React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center"
+      }
+    }, React.createElement(HealthDot, {
+      status: health.status
+    }), React.createElement("span", {
+      style: {
+        fontWeight: 600,
+        fontSize: 13
+      }
+    }, job.customerName), React.createElement("span", {
+      style: {
+        color: MUTE,
+        fontSize: 11.5,
+        marginLeft: 8
+      }
+    }, job.id + " \u00b7 " + (job.salesRep || "Unassigned") + " \u00b7 " + job.stage)), React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: MUTE
+      }
+    }, isOpen ? "\u25B2" : "\u25BC")), isOpen && React.createElement("div", {
+      style: {
+        marginTop: 8,
+        paddingTop: 8,
+        borderTop: `1px solid ${LINE}`
+      }
+    }, health.reasons.map((r, i) => React.createElement("div", {
+      key: i,
+      style: {
+        fontSize: 12,
+        color: INK,
+        marginBottom: 3
+      }
+    }, "\u2022 " + r))));
+  }
+  return React.createElement("div", null, React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10,
+      marginBottom: 18,
+      flexWrap: "wrap"
+    }
+  }, React.createElement(KPICard, {
+    label: "Needs attention now",
+    value: String(redJobs.length)
+  }), React.createElement(KPICard, {
+    label: "Worth a look",
+    value: String(yellowJobs.length)
+  }), React.createElement(KPICard, {
+    label: "On track",
+    value: String(greenCount)
+  }), React.createElement(KPICard, {
+    label: "Too early to assess",
+    value: String(grayCount)
+  })), redJobs.length > 0 && React.createElement("div", {
+    style: {
+      marginBottom: 20
+    }
+  }, React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 14,
+      color: DANGER_TEXT,
+      marginBottom: 8
+    }
+  }, "\uD83D\uDD34 Needs attention now (" + redJobs.length + ")"), redJobs.map(s => React.createElement(JobAttentionRow, {
+    key: s.job.id,
+    job: s.job,
+    health: s.health
+  }))), yellowJobs.length > 0 && React.createElement("div", {
+    style: {
+      marginBottom: 20
+    }
+  }, React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 14,
+      color: "#8A6200",
+      marginBottom: 8
+    }
+  }, "\uD83D\uDFE1 Worth a look (" + yellowJobs.length + ")"), yellowJobs.map(s => React.createElement(JobAttentionRow, {
+    key: s.job.id,
+    job: s.job,
+    health: s.health
+  }))), redJobs.length === 0 && yellowJobs.length === 0 && React.createElement("div", {
+    style: {
+      textAlign: "center",
+      padding: 30,
+      color: MUTE,
+      fontSize: 13
+    }
+  }, "Nothing needs attention right now. \uD83C\uDF89"));
 }
 ReactDOM.createRoot(document.getElementById('root')).render(/*#__PURE__*/React.createElement(App, null));
 </script>
