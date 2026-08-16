@@ -1186,7 +1186,7 @@ function DetailModal({
   }, job.email) : "—"), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Sales rep:"), " ", job.salesRep || "Unassigned"), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Date entered:"), " ", fmtDate(job.dateEntered), " · ", /*#__PURE__*/React.createElement("b", null, "Last updated:"), " ", fmtDate(job.lastUpdated)), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Job type:"), " ", job.jobType || "—"), job.jobType === "Insurance" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Insurance carrier:"), " ", job.insuranceCarrier || "—", " · ", /*#__PURE__*/React.createElement("b", null, "Claim #:"), " ", job.claimNum || "—"), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Weather report:"), " ", job.weatherReport || "No", " · ", /*#__PURE__*/React.createElement("b", null, "Public adjuster:"), " ", job.sentPublicAdjuster || "No", " · ", /*#__PURE__*/React.createElement("b", null, "Appraisal:"), " ", job.sentAppraisal || "No")), job.jobType === "Insurance" && /*#__PURE__*/React.createElement(InsuranceFinancialsPanel, {
     job: job,
     onSave: onSave
-  }), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Contract:"), " ", fmtMoney(job.contractAmount), " · ", /*#__PURE__*/React.createElement("b", null, "Balance due:"), " ", fmtMoney(job.balanceDue)), job.jobType !== "Insurance" && /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Commission:"), " ", fmtMoney(calcCommission(job)), " · ", /*#__PURE__*/React.createElement("b", null, "Advance paid:"), " ", job.salesRepAdvancePaid || "No"), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Install crew paid:"), " ", job.installersPaidFull || "No", " · ", /*#__PURE__*/React.createElement("b", null, "Install payment:"), " ", fmtMoney(calcInstallPaid(job))), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Material cost:"), " ", fmtMoney(calcMaterialCost(job)), job.jobType !== "Insurance" && /*#__PURE__*/React.createElement(React.Fragment, null, " · ", /*#__PURE__*/React.createElement("b", null, "Net P/L:"), " ", fmtSigned(calcNetPL(job)))), job.notes && /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Notes:"), " ", job.notes), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Insurance inspection date/time:"), " ", fmtDateTime(job.inspectionDateTime), job.inspectionDateTime && job.reminderSent === "Yes" ? " (2-hour reminder already sent)" : ""), /*#__PURE__*/React.createElement("a", {
+  }), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Contract:"), " ", fmtMoney(job.contractAmount), " · ", /*#__PURE__*/React.createElement("b", null, "Balance due:"), " ", fmtMoney(job.balanceDue)), job.jobType !== "Insurance" && /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Commission:"), " ", fmtMoney(calcCommission(job)), " · ", /*#__PURE__*/React.createElement("b", null, "Advance paid:"), " ", job.salesRepAdvancePaid || "No"), job.jobType !== "Insurance" && /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Install crew paid:"), " ", job.installersPaidFull || "No", " · ", /*#__PURE__*/React.createElement("b", null, "Install payment:"), " ", fmtMoney(calcInstallPaid(job))), job.jobType !== "Insurance" && /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Material cost:"), " ", fmtMoney(calcMaterialCost(job)), job.jobType !== "Insurance" && /*#__PURE__*/React.createElement(React.Fragment, null, " · ", /*#__PURE__*/React.createElement("b", null, "Net P/L:"), " ", fmtSigned(calcNetPL(job)))), job.notes && /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Notes:"), " ", job.notes), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Insurance inspection date/time:"), " ", fmtDateTime(job.inspectionDateTime), job.inspectionDateTime && job.reminderSent === "Yes" ? " (2-hour reminder already sent)" : ""), /*#__PURE__*/React.createElement("a", {
     href: calendarLink(job, "insurance"),
     target: "_blank",
     style: {
@@ -1856,11 +1856,16 @@ function App() {
       id,
       patch
     });
-    refresh();
+    // Patch BOTH the open job view and the underlying jobs list locally,
+    // right away — don't rely on the background refresh() succeeding.
+    // If refresh() is slow or the connection hiccups, closing and
+    // reopening this job must still show what was just saved.
+    setJobs(prev => prev.map(j => j.id === id ? { ...j, ...patch } : j));
     setSelectedJob(prev => prev && prev.id === id ? {
       ...prev,
       ...patch
     } : prev);
+    refresh();
   }
   async function deleteJob(id) {
     await api(null, null, true, {
@@ -3856,13 +3861,9 @@ function InsuranceFinancialsPanel({
   });
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    const clean = {
+    setForm({
       ...job
-    };
-    INSURANCE_DETAILS_GROUPS.forEach(g => g.fields.forEach(([key,, type]) => {
-      if (type === "date" && clean[key]) clean[key] = String(clean[key]).slice(0, 10);
-    }));
-    setForm(clean);
+    });
   }, [job && job.id]);
   function loadAll() {
     setLoading(true);
@@ -3890,7 +3891,6 @@ function InsuranceFinancialsPanel({
     };
     INSURANCE_DETAILS_GROUPS.forEach(g => g.fields.forEach(([key,, type]) => {
       if (type === "number") patch[key] = patch[key] === "" || patch[key] == null ? null : Number(patch[key]);
-      if (type === "date" && patch[key]) patch[key] = String(patch[key]).slice(0, 10);
     }));
     await onSave(job.id, patch);
     setEditing(false);
