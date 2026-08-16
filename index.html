@@ -3387,11 +3387,15 @@ function calcFinancialDashboard(job, payments, expenses) {
   const recoverableDep = insNum(job.insRecoverableDepreciation);
   const nonRecoverableDep = insNum(job.insNonRecoverableDepreciation);
   const priorPayments = insNum(job.insPriorPayments);
-  // Initial Insurance Check is CALCULATED, not manually entered: the
-  // insurer pays out the full settlement minus what it's holding back
-  // (depreciation), minus the deductible (customer's share), minus
-  // anything already sent as a prior payment.
-  const initialCheck = round2(settlementPlusInterest - recoverableDep - deductible - nonRecoverableDep - priorPayments);
+  // Initial Insurance Check: if a documented value exists (e.g. from an
+  // imported carrier document like a USAA "Net Claim", which has no
+  // separate Settlement figure), that documented number always wins.
+  // Otherwise it's calculated from Settlement + Interest \u2014 the insurer
+  // pays out the settlement minus what it's holding back (depreciation),
+  // minus the deductible (customer's share), minus any prior payment.
+  const initialCheckCalculated = round2(settlementPlusInterest - recoverableDep - deductible - nonRecoverableDep - priorPayments);
+  const hasDocumentedFirstCheck = job.insFirstCheck != null && job.insFirstCheck !== "";
+  const initialCheck = hasDocumentedFirstCheck ? insNum(job.insFirstCheck) : initialCheckCalculated;
   const supplements = insNum(job.insSupplementsApproved);
   const ordinanceLaw = job.insOrdinanceLawEligible === "Yes" ? insNum(job.insOrdinanceLaw) : 0;
   const expectedRevenueCalculated = round2(initialCheck + deductible + recoverableDep + supplements + ordinanceLaw);
@@ -3431,6 +3435,7 @@ function calcFinancialDashboard(job, payments, expenses) {
     interest,
     settlementPlusInterest,
     initialCheck,
+    hasDocumentedFirstCheck,
     deductible,
     recoverableDep,
     supplements,
@@ -4121,7 +4126,7 @@ function InsuranceFinancialsPanel({
     value: fmtMoney(calc.settlementPlusInterest),
     sub: true
   }), React.createElement(MiniRow, {
-    label: "Initial insurance check (calc.)",
+    label: "Initial insurance check (" + (calc.hasDocumentedFirstCheck ? "documented" : "calc.") + ")",
     value: fmtMoney(calc.initialCheck),
     sub: true
   }), React.createElement(OverrideRow, {
