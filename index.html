@@ -3165,7 +3165,15 @@ function ImportExtractionModal({
     Object.entries(reviewed).forEach(([k, r]) => {
       if (r.decision === "approved") {
         const [, type] = EXTRACTION_FIELD_LABELS[k];
-        patch[k] = type === "number" ? Number(r.value) : r.value;
+        if (type === "number") {
+          patch[k] = Number(r.value);
+        } else if (k === "insDateOfLoss") {
+          // Always store as a plain YYYY-MM-DD string, never a full
+          // ISO timestamp \u2014 the date <input> can't render anything else.
+          patch[k] = String(r.value).slice(0, 10);
+        } else {
+          patch[k] = r.value;
+        }
       }
     });
     if (Object.keys(patch).length === 0) {
@@ -3416,8 +3424,11 @@ function calcFinancialDashboard(job, payments, expenses) {
   const totalCommission = netProjectBudget != null ? round2(netProjectBudget * (commissionPct / 100)) : null;
   const remainingCommission = totalCommission != null ? Math.max(0, round2(totalCommission - commissionAdvance)) : null;
   const expList = expenses || [];
-  const materialsCost = round2(expList.filter(e => e.category === "Materials").reduce((s, e) => s + insNum(e.amount), 0));
-  const laborCost = round2(expList.filter(e => e.category === "Labor").reduce((s, e) => s + insNum(e.amount), 0));
+  // Include the legacy single "Material cost" job field (if set) plus any
+  // itemized Materials entries logged in Expense Details, so nothing
+  // captured the old way gets silently dropped from the total.
+  const materialsCost = round2(insNum(job.materialCost) + expList.filter(e => e.category === "Materials").reduce((s, e) => s + insNum(e.amount), 0));
+  const laborCost = round2(insNum(job.laborCost) + expList.filter(e => e.category === "Labor").reduce((s, e) => s + insNum(e.amount), 0));
   const otherExpensesCost = round2(expList.filter(e => e.category !== "Materials" && e.category !== "Labor").reduce((s, e) => s + insNum(e.amount), 0));
   const totalCosts = totalCommission != null ? round2(totalCommission + materialsCost + laborCost + otherExpensesCost) : null;
   const profitLoss = netProjectBudget != null && totalCosts != null ? round2(netProjectBudget - totalCosts) : null;
@@ -3845,9 +3856,13 @@ function InsuranceFinancialsPanel({
   });
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    setForm({
+    const clean = {
       ...job
-    });
+    };
+    INSURANCE_DETAILS_GROUPS.forEach(g => g.fields.forEach(([key,, type]) => {
+      if (type === "date" && clean[key]) clean[key] = String(clean[key]).slice(0, 10);
+    }));
+    setForm(clean);
   }, [job && job.id]);
   function loadAll() {
     setLoading(true);
@@ -3875,6 +3890,7 @@ function InsuranceFinancialsPanel({
     };
     INSURANCE_DETAILS_GROUPS.forEach(g => g.fields.forEach(([key,, type]) => {
       if (type === "number") patch[key] = patch[key] === "" || patch[key] == null ? null : Number(patch[key]);
+      if (type === "date" && patch[key]) patch[key] = String(patch[key]).slice(0, 10);
     }));
     await onSave(job.id, patch);
     setEditing(false);
