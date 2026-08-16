@@ -2612,7 +2612,7 @@ function App() {
       color: r.netOwed < 0 ? DANGER_TEXT : INK,
       fontWeight: 500
     }
-  }, fmtSigned(r.netOwed)))))))), view === "financial" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, fmtSigned(r.netOwed)))))))), view === "payroll" && /*#__PURE__*/React.createElement(PayrollLedgerModule, { jobs: jobs || [] }), view === "financial" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: MUTE,
@@ -4483,6 +4483,539 @@ function openInsuranceInvoice(job, calc) {
     win.document.write(html);
     win.document.close();
   }
+}
+const COMMISSION_TX_TYPES = ["Advance earned", "Advance paid", "Final commission earned", "Final commission paid", "Chargeback", "Adjustment", "Recovery", "Manual correction"];
+const NEGATIVE_TX_TYPES = ["Chargeback"];
+function payrollFmt(n) {
+  const num = Number(n) || 0;
+  return (num < 0 ? "-$" : "$") + Math.abs(num).toFixed(2);
+}
+function PayrollLedgerModule({
+  jobs
+}) {
+  const [ledger, setLedger] = useState([]);
+  const [runs, setRuns] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [repFilter, setRepFilter] = useState("All");
+  const [newTx, setNewTx] = useState({
+    salesRep: "",
+    jobId: "",
+    type: COMMISSION_TX_TYPES[0],
+    amount: "",
+    date: "",
+    reason: "",
+    notes: ""
+  });
+  const [busy, setBusy] = useState(false);
+  const [newRunStart, setNewRunStart] = useState("");
+  const [newRunEnd, setNewRunEnd] = useState("");
+  const knownReps = Array.from(new Set((jobs || []).map(j => j.salesRep).filter(Boolean))).sort();
+  function loadAll() {
+    setLoading(true);
+    Promise.all([api("commissionLedger", {}), api("payrollRuns", {})]).then(([l, r]) => {
+      setLedger(l && l.ledger ? l.ledger : []);
+      setRuns(r && r.runs ? r.runs : []);
+    }).finally(() => setLoading(false));
+  }
+  useEffect(() => {
+    loadAll();
+  }, []);
+  async function submitTx() {
+    if (!newTx.salesRep || !newTx.amount) return;
+    setBusy(true);
+    const signedAmount = NEGATIVE_TX_TYPES.includes(newTx.type) ? -Math.abs(Number(newTx.amount)) : Math.abs(Number(newTx.amount));
+    await api(null, null, true, {
+      action: "addCommissionTx",
+      tx: {
+        ...newTx,
+        amount: signedAmount
+      }
+    });
+    setNewTx({
+      salesRep: newTx.salesRep,
+      jobId: "",
+      type: COMMISSION_TX_TYPES[0],
+      amount: "",
+      date: "",
+      reason: "",
+      notes: ""
+    });
+    await loadAll();
+    setBusy(false);
+  }
+  async function createRun() {
+    if (!newRunStart || !newRunEnd) return;
+    setBusy(true);
+    await api(null, null, true, {
+      action: "createPayrollRun",
+      periodStart: newRunStart,
+      periodEnd: newRunEnd
+    });
+    setNewRunStart("");
+    setNewRunEnd("");
+    await loadAll();
+    setBusy(false);
+  }
+  async function approveRun(id) {
+    await api(null, null, true, {
+      action: "approvePayrollRun",
+      id
+    });
+    loadAll();
+  }
+  async function payRun(id) {
+    if (!window.confirm("Mark this payroll run as paid? This also marks every assigned ledger entry as Paid.")) return;
+    await api(null, null, true, {
+      action: "markPayrollRunPaid",
+      id
+    });
+    loadAll();
+  }
+  const filteredLedger = repFilter === "All" ? ledger : ledger.filter(t => t.salesRep === repFilter);
+
+  // Per-rep running balance across all Pending + Assigned (not yet Paid) entries.
+  const balances = {};
+  ledger.forEach(t => {
+    if (t.status === "Paid") return;
+    balances[t.salesRep] = (balances[t.salesRep] || 0) + (Number(t.amount) || 0);
+  });
+  function runBreakdown(runId) {
+    const entries = ledger.filter(t => t.payrollRunId === runId);
+    const byRep = {};
+    entries.forEach(t => {
+      byRep[t.salesRep] = (byRep[t.salesRep] || 0) + (Number(t.amount) || 0);
+    });
+    return {
+      entries,
+      byRep
+    };
+  }
+  return React.createElement("div", {
+    style: {
+      marginTop: 24,
+      borderTop: `2px solid ${RUST}`,
+      paddingTop: 16
+    }
+  }, React.createElement("div", {
+    style: {
+      fontFamily: FONT_HEAD,
+      fontSize: 17,
+      color: INK,
+      marginBottom: 10
+    }
+  }, "Commission Ledger & Weekly Payroll"), loading && React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: MUTE,
+      marginBottom: 10
+    }
+  }, "Loading ledger..."),
+  // Balances per rep
+  React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 8,
+      marginBottom: 16
+    }
+  }, Object.keys(balances).length === 0 && React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: MUTE
+    }
+  }, "No ledger entries yet."), Object.entries(balances).map(([rep, bal]) => React.createElement("div", {
+    key: rep,
+    style: {
+      background: bal < 0 ? DANGER_BG : "#EEECE4",
+      borderRadius: 8,
+      padding: "10px 14px",
+      minWidth: 160
+    }
+  }, React.createElement("div", {
+    style: {
+      fontSize: 10.5,
+      fontWeight: 700,
+      textTransform: "uppercase",
+      color: bal < 0 ? DANGER_TEXT : MUTE,
+      marginBottom: 2
+    }
+  }, rep + " \u2014 unpaid balance"), React.createElement("div", {
+    style: {
+      fontSize: 17,
+      fontWeight: 800,
+      color: bal < 0 ? DANGER_TEXT : INK
+    }
+  }, payrollFmt(bal))))),
+  // Add transaction
+  React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      padding: 12,
+      marginBottom: 16
+    }
+  }, React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 700,
+      color: MUTE,
+      marginBottom: 8,
+      textTransform: "uppercase"
+    }
+  }, "Log a transaction"), React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap"
+    }
+  }, React.createElement("input", {
+    list: "reps-list",
+    type: "text",
+    placeholder: "Sales rep",
+    value: newTx.salesRep,
+    onChange: e => setNewTx(p => ({
+      ...p,
+      salesRep: e.target.value
+    })),
+    style: {
+      width: 130,
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }), React.createElement("datalist", {
+    id: "reps-list"
+  }, knownReps.map(r => React.createElement("option", {
+    key: r,
+    value: r
+  }))), React.createElement("input", {
+    type: "text",
+    placeholder: "Job ID (optional)",
+    value: newTx.jobId,
+    onChange: e => setNewTx(p => ({
+      ...p,
+      jobId: e.target.value
+    })),
+    style: {
+      width: 100,
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }), React.createElement("select", {
+    value: newTx.type,
+    onChange: e => setNewTx(p => ({
+      ...p,
+      type: e.target.value
+    })),
+    style: {
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }, COMMISSION_TX_TYPES.map(t => React.createElement("option", {
+    key: t,
+    value: t
+  }, t))), React.createElement("input", {
+    type: "number",
+    placeholder: "Amount",
+    value: newTx.amount,
+    onChange: e => setNewTx(p => ({
+      ...p,
+      amount: e.target.value
+    })),
+    style: {
+      width: 90,
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }), React.createElement("input", {
+    type: "date",
+    value: newTx.date,
+    onChange: e => setNewTx(p => ({
+      ...p,
+      date: e.target.value
+    })),
+    style: {
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }), React.createElement("input", {
+    type: "text",
+    placeholder: "Reason",
+    value: newTx.reason,
+    onChange: e => setNewTx(p => ({
+      ...p,
+      reason: e.target.value
+    })),
+    style: {
+      width: 140,
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }), React.createElement("button", {
+    onClick: submitTx,
+    disabled: busy || !newTx.salesRep || !newTx.amount,
+    style: {
+      padding: "7px 14px",
+      borderRadius: 5,
+      border: "none",
+      background: RUST,
+      color: "#fff",
+      fontSize: 12.5,
+      cursor: "pointer"
+    }
+  }, busy ? "Saving..." : "Log it")), React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: MUTE,
+      marginTop: 6
+    }
+  }, "Chargeback amounts are automatically saved as negative. Once logged, amount/type can't be edited \u2014 log a correction entry instead.")),
+  // Ledger list
+  React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 8
+    }
+  }, React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: INK
+    }
+  }, "Ledger (" + filteredLedger.length + ")"), React.createElement("select", {
+    value: repFilter,
+    onChange: e => setRepFilter(e.target.value),
+    style: {
+      padding: "5px 8px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      fontSize: 12
+    }
+  }, React.createElement("option", {
+    value: "All"
+  }, "All reps"), knownReps.map(r => React.createElement("option", {
+    key: r,
+    value: r
+  }, r)))), React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      overflow: "hidden",
+      marginBottom: 20
+    }
+  }, filteredLedger.length === 0 && React.createElement("div", {
+    style: {
+      padding: 14,
+      textAlign: "center",
+      color: MUTE,
+      fontSize: 12.5
+    }
+  }, "No entries."), filteredLedger.map(t => React.createElement("div", {
+    key: t.id,
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "8px 12px",
+      borderBottom: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }, React.createElement("div", null, React.createElement("div", {
+    style: {
+      fontWeight: 600
+    }
+  }, t.salesRep + " \u2014 " + t.type + " \u2014 " + payrollFmt(t.amount)), React.createElement("div", {
+    style: {
+      color: MUTE,
+      fontSize: 11
+    }
+  }, (t.date || "no date") + (t.jobId ? " \u00b7 Job " + t.jobId : "") + (t.reason ? " \u00b7 " + t.reason : ""))), React.createElement("span", {
+    style: {
+      fontSize: 10.5,
+      fontWeight: 700,
+      padding: "3px 8px",
+      borderRadius: 4,
+      textTransform: "uppercase",
+      background: t.status === "Paid" ? OK_BG : t.status === "Assigned" ? "#E6F1FB" : "#FDF3D9",
+      color: t.status === "Paid" ? OK_TEXT : t.status === "Assigned" ? "#0C447C" : "#8A6200"
+    }
+  }, t.status)))),
+  // Payroll runs
+  React.createElement("div", {
+    style: {
+      fontSize: 14,
+      fontFamily: FONT_HEAD,
+      color: INK,
+      marginBottom: 8
+    }
+  }, "Weekly Payroll Runs"), React.createElement("div", {
+    style: {
+      background: CARD,
+      border: `1px solid ${LINE}`,
+      borderRadius: 8,
+      padding: 12,
+      marginBottom: 12
+    }
+  }, React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 700,
+      color: MUTE,
+      marginBottom: 8,
+      textTransform: "uppercase"
+    }
+  }, "Create new run"), React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: MUTE,
+      marginBottom: 8
+    }
+  }, "Pulls in every unassigned (Pending) ledger entry dated on or before the period end."), React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "center"
+    }
+  }, React.createElement("input", {
+    type: "date",
+    value: newRunStart,
+    onChange: e => setNewRunStart(e.target.value),
+    style: {
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }), React.createElement("span", {
+    style: {
+      color: MUTE,
+      fontSize: 12
+    }
+  }, "to"), React.createElement("input", {
+    type: "date",
+    value: newRunEnd,
+    onChange: e => setNewRunEnd(e.target.value),
+    style: {
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`,
+      fontSize: 12.5
+    }
+  }), React.createElement("button", {
+    onClick: createRun,
+    disabled: busy || !newRunStart || !newRunEnd,
+    style: {
+      padding: "7px 14px",
+      borderRadius: 5,
+      border: "none",
+      background: RUST,
+      color: "#fff",
+      fontSize: 12.5,
+      cursor: "pointer"
+    }
+  }, "Create run"))), runs.length === 0 && React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: MUTE
+    }
+  }, "No payroll runs yet."), runs.slice().reverse().map(run => {
+    const {
+      entries,
+      byRep
+    } = runBreakdown(run.id);
+    return React.createElement("div", {
+      key: run.id,
+      style: {
+        background: CARD,
+        border: `1px solid ${LINE}`,
+        borderRadius: 8,
+        padding: 12,
+        marginBottom: 10
+      }
+    }, React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 8
+      }
+    }, React.createElement("div", null, React.createElement("span", {
+      style: {
+        fontWeight: 700,
+        fontSize: 13
+      }
+    }, run.id + ": " + run.periodStart + " \u2192 " + run.periodEnd), React.createElement("span", {
+      style: {
+        marginLeft: 8,
+        fontSize: 10.5,
+        fontWeight: 700,
+        padding: "3px 8px",
+        borderRadius: 4,
+        textTransform: "uppercase",
+        background: run.status === "Paid" ? OK_BG : run.status === "Approved" ? "#E6F1FB" : "#FDF3D9",
+        color: run.status === "Paid" ? OK_TEXT : run.status === "Approved" ? "#0C447C" : "#8A6200"
+      }
+    }, run.status)), React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6
+      }
+    }, run.status === "Draft" && React.createElement("button", {
+      onClick: () => approveRun(run.id),
+      style: {
+        padding: "5px 10px",
+        borderRadius: 5,
+        border: `1px solid ${LINE}`,
+        background: "#fff",
+        fontSize: 11.5,
+        cursor: "pointer"
+      }
+    }, "Approve"), run.status === "Approved" && React.createElement("button", {
+      onClick: () => payRun(run.id),
+      style: {
+        padding: "5px 10px",
+        borderRadius: 5,
+        border: "none",
+        background: RUST,
+        color: "#fff",
+        fontSize: 11.5,
+        cursor: "pointer"
+      }
+    }, "Mark Paid"))), Object.keys(byRep).length === 0 ? React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: MUTE
+      }
+    }, "No entries assigned.") : Object.entries(byRep).map(([rep, net]) => React.createElement("div", {
+      key: rep,
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        padding: "4px 0",
+        fontSize: 12.5
+      }
+    }, React.createElement("span", null, rep), React.createElement("span", {
+      style: {
+        fontWeight: 700,
+        color: net < 0 ? DANGER_TEXT : INK
+      }
+    }, payrollFmt(net)))));
+  }));
 }
 ReactDOM.createRoot(document.getElementById('root')).render(/*#__PURE__*/React.createElement(App, null));
 </script>
