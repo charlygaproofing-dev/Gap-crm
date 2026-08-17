@@ -1857,15 +1857,15 @@ function App() {
       patch
     });
     // Patch BOTH the open job view and the underlying jobs list locally,
-    // right away — don't rely on the background refresh() succeeding.
-    // If refresh() is slow or the connection hiccups, closing and
-    // reopening this job must still show what was just saved.
+    // right away. We deliberately do NOT also call refresh() here: that
+    // triggers a slow (~2s) background re-fetch that can resolve with
+    // stale data and silently overwrite the correct update we just made
+    // — that race was the exact cause of "close and reopen loses data".
     setJobs(prev => prev.map(j => j.id === id ? { ...j, ...patch } : j));
     setSelectedJob(prev => prev && prev.id === id ? {
       ...prev,
       ...patch
     } : prev);
-    refresh();
   }
   async function deleteJob(id) {
     await api(null, null, true, {
