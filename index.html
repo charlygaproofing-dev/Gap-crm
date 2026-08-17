@@ -3416,7 +3416,7 @@ function calcFinancialDashboard(job, payments, expenses) {
   const expectedRevenue = expectedRevenueOverride != null ? expectedRevenueOverride : expectedRevenueCalculated;
   const paPct = job.insPAPercentage != null && job.insPAPercentage !== "" ? insNum(job.insPAPercentage) : 10;
   let paFee;
-  if (job.insPAFeeBasis === "Manual amount") paFee = insNum(job.insPAFeeManualAmount);else if (job.insPAFeeBasis === "Pending confirmation") paFee = null;else paFee = round2(settlementPlusInterest * (paPct / 100));
+  if (job.insPAFeeBasis === "Manual amount") paFee = insNum(job.insPAFeeManualAmount);else if (job.insPAFeeBasis === "Pending confirmation") paFee = null;else if (job.insPAFeeBasis === "Percent of RCV / Expected Revenue") paFee = round2(expectedRevenue * (paPct / 100));else paFee = round2(settlementPlusInterest * (paPct / 100));
   const appraisalFee = insNum(job.insAppraisalFee);
   const otherClaimFees = insNum(job.insOtherClaimFees);
   const netProjectBudgetCalculated = paFee != null ? round2(expectedRevenue - paFee - appraisalFee - otherClaimFees) : null;
@@ -3782,7 +3782,7 @@ const INSURANCE_DETAILS_GROUPS = [{
   fields: [["insPriorPayments", "Prior payments", "number"], ["insSupplementsApproved", "Supplemental payments", "number"], ["insOrdinanceLaw", "Ordinance and Law amount", "number"], ["insOrdinanceLawEligible", "O&L approved & collectible?", "yesno"]]
 }, {
   title: "Claim expenses",
-  fields: [["insPAFeeBasis", "PA fee basis", "select", ["Percent of settlement+interest", "Manual amount", "Pending confirmation"]], ["insPAPercentage", "PA fee % (default 10%)", "number"], ["insPAFeeManualAmount", "PA fee manual amount", "number"], ["insPAFeeStatus", "PA fee status", "select", ["Confirmed", "Estimated", "Pending"]], ["insAppraisalFee", "Appraisal fee", "number"], ["insOtherClaimFees", "Other claim fees", "number"]]
+  fields: [["insPAFeeBasis", "PA fee basis", "select", ["Percent of settlement+interest", "Percent of RCV / Expected Revenue", "Manual amount", "Pending confirmation"]], ["insPAPercentage", "PA fee % (default 10%)", "number"], ["insPAFeeManualAmount", "PA fee manual amount", "number"], ["insPAFeeStatus", "PA fee status", "select", ["Confirmed", "Estimated", "Pending"]], ["insAppraisalFee", "Appraisal fee", "number"], ["insOtherClaimFees", "Other claim fees", "number"]]
 }, {
   title: "Commission",
   fields: [["insCommissionPct", "Commission % (default 10%)", "number"], ["insCommissionAdvance", "Advance amount (default $500)", "number"], ["insCommissionAdvanceDate", "Advance paid date", "date"], ["insCommissionFinalPaymentDate", "Final payment date", "date"], ["insCommissionStatus", "Commission status", "select", ["Pending", "Advance Paid", "Paid in Full"]]]
