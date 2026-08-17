@@ -3867,6 +3867,10 @@ function InsuranceFinancialsPanel({
   });
   const [busy, setBusy] = useState(false);
   useEffect(() => {
+    // Re-sync whenever the underlying job data changes (e.g. right after
+    // an AI import saves new fields) \u2014 but never while the user is
+    // actively editing, so we don't clobber their in-progress typing.
+    if (editing) return;
     const clean = {
       ...job
     };
@@ -3874,7 +3878,7 @@ function InsuranceFinancialsPanel({
       if (type === "date" && clean[key]) clean[key] = String(clean[key]).slice(0, 10);
     }));
     setForm(clean);
-  }, [job && job.id]);
+  }, [job, editing]);
   function loadAll() {
     setLoading(true);
     Promise.all([api("payments", {
