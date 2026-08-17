@@ -3866,18 +3866,21 @@ function InsuranceFinancialsPanel({
     notes: ""
   });
   const [busy, setBusy] = useState(false);
+  function cleanFormFromJob(j) {
+    const clean = {
+      ...j
+    };
+    INSURANCE_DETAILS_GROUPS.forEach(g => g.fields.forEach(([key,, type]) => {
+      if (type === "date" && clean[key]) clean[key] = String(clean[key]).slice(0, 10);
+    }));
+    return clean;
+  }
   useEffect(() => {
     // Re-sync whenever the underlying job data changes (e.g. right after
     // an AI import saves new fields) \u2014 but never while the user is
     // actively editing, so we don't clobber their in-progress typing.
     if (editing) return;
-    const clean = {
-      ...job
-    };
-    INSURANCE_DETAILS_GROUPS.forEach(g => g.fields.forEach(([key,, type]) => {
-      if (type === "date" && clean[key]) clean[key] = String(clean[key]).slice(0, 10);
-    }));
-    setForm(clean);
+    setForm(cleanFormFromJob(job));
   }, [job, editing]);
   function loadAll() {
     setLoading(true);
@@ -4037,7 +4040,10 @@ function InsuranceFinancialsPanel({
       cursor: "pointer"
     }
   }, "\uD83D\uDCC4 Insurance Invoice"), React.createElement("button", {
-    onClick: () => setShowImport(true),
+    onClick: () => {
+      setEditing(false);
+      setShowImport(true);
+    },
     style: {
       background: CARD,
       border: `1px solid ${LINE}`,
@@ -4048,7 +4054,15 @@ function InsuranceFinancialsPanel({
       cursor: "pointer"
     }
   }, "\uD83D\uDCE5 Import from AI Extraction"), React.createElement("button", {
-    onClick: () => editing ? saveFields() : setEditing(true),
+    onClick: () => {
+      if (editing) {
+        saveFields();
+      } else {
+        setShowImport(false);
+        setForm(cleanFormFromJob(job));
+        setEditing(true);
+      }
+    },
     style: {
       background: editing ? RUST : "#FAECE7",
       border: `1px solid ${RUST}`,
