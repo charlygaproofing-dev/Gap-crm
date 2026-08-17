@@ -3471,25 +3471,25 @@ const INSURANCE_DETAILS_GROUPS = [{
   fields: [["insuranceCarrier", "Insurance company", "text"], ["claimNum", "Claim #", "text"], ["insPolicyNumber", "Policy #", "text"], ["insDateOfLoss", "Date of loss", "date"], ["insPublicAdjusterName", "Public adjuster name", "text"]]
 }, {
   title: "Valuation",
-  fields: [["insRCV", "RCV", "number"], ["insACV", "ACV", "number"], ["insSettlementAmount", "Settlement / agreed amount", "number"], ["insInterestInFirstCheck", "Interest", "number"], ["insOriginalEstimate", "Original insurance estimate", "number"], ["insAppraisalAward", "Appraisal/award amount", "number"], ["insOtherStructures", "Other structures amount", "number"]]
+  fields: [["insSettlementAmount", "Settlement / agreed amount", "number"], ["insInterestInFirstCheck", "Interest", "number"]]
 }, {
   title: "Depreciation",
   fields: [["insRecoverableDepreciation", "Recoverable depreciation", "number"], ["insRecoverableDepreciationReleased", "Released?", "yesno"], ["insNonRecoverableDepreciation", "Non-recoverable depreciation", "number"]]
 }, {
   title: "Customer responsibility",
-  fields: [["insDeductible", "Deductible", "number"], ["insDeductibleReduction", "Deductible reduction/credit", "number"]]
+  fields: [["insDeductible", "Deductible", "number"]]
 }, {
   title: "Insurance payments",
   fields: [["insPriorPayments", "Prior payments", "number"], ["insSupplementsApproved", "Supplemental payments", "number"], ["insOrdinanceLaw", "Ordinance and Law amount", "number"], ["insOrdinanceLawEligible", "O&L approved & collectible?", "yesno"]]
 }, {
   title: "Claim expenses",
-  fields: [["insPAFeeBasis", "PA fee basis", "select", ["Percent of settlement+interest", "Percent of RCV / Expected Revenue", "Manual amount", "Pending confirmation"]], ["insPAPercentage", "PA fee % (default 10%)", "number"], ["insPAFeeManualAmount", "PA fee manual amount", "number"], ["insPAFeeStatus", "PA fee status", "select", ["Confirmed", "Estimated", "Pending"]], ["insAppraisalFee", "Appraisal fee", "number"], ["insOtherClaimFees", "Other claim fees", "number"]]
+  fields: [["insPAFeeBasis", "PA fee basis", "select", ["Percent of settlement+interest", "Percent of RCV / Expected Revenue", "Manual amount", "Pending confirmation"]], ["insPAPercentage", "PA fee % (default 10%)", "number"], ["insPAFeeManualAmount", "PA fee manual amount", "number"], ["insAppraisalFee", "Appraisal fee", "number"], ["insOtherClaimFees", "Other claim fees", "number"]]
 }, {
   title: "Commission",
-  fields: [["insCommissionPct", "Commission % (default 10%)", "number"], ["insCommissionAdvance", "Advance amount (default $500)", "number"], ["insCommissionAdvanceDate", "Advance paid date", "date"], ["insCommissionFinalPaymentDate", "Final payment date", "date"], ["insCommissionStatus", "Commission status", "select", ["Pending", "Advance Paid", "Paid in Full"]]]
+  fields: [["insCommissionPct", "Commission % (default 10%)", "number"], ["insCommissionAdvance", "Advance amount (default $500)", "number"]]
 }, {
   title: "Contract & scope",
-  fields: [["insExcludedRepairsAmount", "Excluded repairs (not done by GAP)", "number"], ["insAuthorizedDiscounts", "Authorized discounts", "number"], ["insNonCollectibleAmount", "Non-collectible amount", "number"], ["insCompletedScopeMatchesAward", "Completed scope matches award?", "yesno"], ["insCompletedScopeDescription", "Completed scope description", "textarea"], ["insAuthorizedInvoiceAmount", "Total authorized invoice amount", "number"]]
+  fields: [["insCompletedScopeMatchesAward", "Completed scope matches award?", "yesno"], ["insAuthorizedInvoiceAmount", "Total authorized invoice amount", "number"]]
 }, {
   title: "Notes",
   fields: [["insNotes", "Notes / document source", "textarea"]]
