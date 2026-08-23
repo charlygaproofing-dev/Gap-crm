@@ -1140,7 +1140,25 @@ function DetailModal({
       borderRadius: 5,
       fontSize: 12
     }
-  }, job.stage), isClosed(job) && /*#__PURE__*/React.createElement("span", {
+  }, job.stage), job.jobType === "Insurance" && job.insClaimOpenedBy && /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: "#E6F1FB",
+      color: "#0C447C",
+      padding: "4px 10px",
+      borderRadius: 5,
+      fontSize: 12,
+      marginLeft: 6
+    }
+  }, "Opened by " + job.insClaimOpenedBy), job.jobType === "Insurance" && /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: job.insPALORSigned === "Yes" ? "#E8F0E4" : "#FDF3D9",
+      color: job.insPALORSigned === "Yes" ? "#3D6B35" : "#8A6200",
+      padding: "4px 10px",
+      borderRadius: 5,
+      fontSize: 12,
+      marginLeft: 6
+    }
+  }, "PA LOR " + (job.insPALORSigned === "Yes" ? "signed" : "not signed")), isClosed(job) && /*#__PURE__*/React.createElement("span", {
     style: {
       background: "#EEECE4",
       color: MUTE,
@@ -1303,6 +1321,17 @@ function DetailModal({
     type: "select",
     options: STAGE_ORDER,
     onChange: set("stage")
+  }), form.jobType === "Insurance" && /*#__PURE__*/React.createElement(EditField, {
+    label: "PA LOR signed?",
+    value: form.insPALORSigned,
+    type: "yesno",
+    onChange: set("insPALORSigned")
+  }), form.jobType === "Insurance" && /*#__PURE__*/React.createElement(EditField, {
+    label: "Claim opened by",
+    value: form.insClaimOpenedBy,
+    type: "select",
+    options: ["GAP", "ACA", "AR"],
+    onChange: set("insClaimOpenedBy")
   }), /*#__PURE__*/React.createElement(EditField, {
     label: "Insurance inspection date & time",
     value: toDatetimeLocal(form.inspectionDateTime),
