@@ -3088,11 +3088,17 @@ function insNum(v) {
   return isNaN(n) ? 0 : n;
 }
 
-// Core financial model: Expected Revenue -> Net Project Budget -> Total
-// Costs -> Profit/Loss. Verified against the Evelyn Gonzalez validation
-// case: Settlement $20,310.42, Interest $693.73, Initial Check $14,485.20,
-// Deductible $2,050, Recoverable Dep $2,066.65, PA Fee $2,100.42 (10% of
-// settlement+interest), Appraisal $750 -> Net Project Budget $15,751.43.
+// Core financial model (2026-08 revision): PA Fee is 10% of the raw claim
+// Total (Settlement+Interest if documented, else RCV, plus Supplements).
+// Net Project Budget = Total - PA Fee - Appraisal Fee - Deductible - Other
+// Claim Fees. The customer's deductible IS subtracted here (insurance
+// deducts it from the first check) even though the customer separately
+// pays it to GAP later \u2014 that later payment shows up in Money In /
+// Total Collected, not by adding it back into this budget number.
+// Verified against 5 real ABC Supply worksheets (Michelle, Abelardo,
+// Tonatiuh, Bernardo, Letty) plus Evelyn Gonzalez: Settlement $20,310.42,
+// Interest $693.73 -> Total $21,004.15, PA $2,100.42 (10%), Appraisal
+// $750, Deductible $2,050 -> Net Project Budget $16,103.73.
 function calcFinancialDashboard(job, payments, expenses) {
   const settlement = insNum(job.insSettlementAmount);
   const interest = insNum(job.insInterestInFirstCheck);
@@ -3101,26 +3107,33 @@ function calcFinancialDashboard(job, payments, expenses) {
   const recoverableDep = insNum(job.insRecoverableDepreciation);
   const nonRecoverableDep = insNum(job.insNonRecoverableDepreciation);
   const priorPayments = insNum(job.insPriorPayments);
-  // Initial Insurance Check: if a documented value exists (e.g. from an
-  // imported carrier document like a USAA "Net Claim", which has no
-  // separate Settlement figure), that documented number always wins.
-  // Otherwise it's calculated from Settlement + Interest \u2014 the insurer
-  // pays out the settlement minus what it's holding back (depreciation),
-  // minus the deductible (customer's share), minus any prior payment.
+  const supplements = insNum(job.insSupplementsApproved);
+  const ordinanceLaw = job.insOrdinanceLawEligible === "Yes" ? insNum(job.insOrdinanceLaw) : 0;
+  const rcv = insNum(job.insRCV);
+
+  // "Total" = the base claim value PA commission and the budget are built
+  // from. Settlement+Interest wins when documented (appraisal-style
+  // claims); otherwise RCV (straightforward claims, e.g. USAA-style).
+  // Supplements and O&L are always added on top, since they're additional
+  // approved money regardless of claim style.
+  const baseTotal = settlementPlusInterest > 0 ? settlementPlusInterest : rcv;
+  const total = round2(baseTotal + supplements + ordinanceLaw);
+
+  // Initial Insurance Check: informational only now (what the first check
+  // actually was/will be) \u2014 documented value wins if present, otherwise
+  // calculated the way the insurer actually pays it out.
   const initialCheckCalculated = round2(settlementPlusInterest - recoverableDep - deductible - nonRecoverableDep - priorPayments);
   const hasDocumentedFirstCheck = job.insFirstCheck != null && job.insFirstCheck !== "";
   const initialCheck = hasDocumentedFirstCheck ? insNum(job.insFirstCheck) : initialCheckCalculated;
-  const supplements = insNum(job.insSupplementsApproved);
-  const ordinanceLaw = job.insOrdinanceLawEligible === "Yes" ? insNum(job.insOrdinanceLaw) : 0;
-  const expectedRevenueCalculated = round2(initialCheck + deductible + recoverableDep + supplements + ordinanceLaw);
+  const expectedRevenueCalculated = total;
   const expectedRevenueOverride = job.insExpectedRevenueOverride != null && job.insExpectedRevenueOverride !== "" ? insNum(job.insExpectedRevenueOverride) : null;
   const expectedRevenue = expectedRevenueOverride != null ? expectedRevenueOverride : expectedRevenueCalculated;
   const paPct = job.insPAPercentage != null && job.insPAPercentage !== "" ? insNum(job.insPAPercentage) : 10;
   let paFee;
-  if (job.insPAFeeBasis === "Manual amount") paFee = insNum(job.insPAFeeManualAmount);else if (job.insPAFeeBasis === "Pending confirmation") paFee = null;else if (job.insPAFeeBasis === "Percent of RCV / Expected Revenue") paFee = round2(expectedRevenue * (paPct / 100));else paFee = round2(settlementPlusInterest * (paPct / 100));
+  if (job.insPAFeeBasis === "Manual amount") paFee = insNum(job.insPAFeeManualAmount);else if (job.insPAFeeBasis === "Pending confirmation") paFee = null;else paFee = round2(total * (paPct / 100));
   const appraisalFee = insNum(job.insAppraisalFee);
   const otherClaimFees = insNum(job.insOtherClaimFees);
-  const netProjectBudgetCalculated = paFee != null ? round2(expectedRevenue - paFee - appraisalFee - otherClaimFees) : null;
+  const netProjectBudgetCalculated = paFee != null ? round2(total - paFee - appraisalFee - deductible - otherClaimFees) : null;
   const netProjectBudgetOverride = job.insNetProjectBudgetOverride != null && job.insNetProjectBudgetOverride !== "" ? insNum(job.insNetProjectBudgetOverride) : null;
   const netProjectBudget = netProjectBudgetOverride != null ? netProjectBudgetOverride : netProjectBudgetCalculated;
   const usingExpectedRevenueOverride = expectedRevenueOverride != null;
@@ -3152,7 +3165,7 @@ function calcFinancialDashboard(job, payments, expenses) {
   const otherInsuranceReceived = round2(payList.filter(p => ["Supplement", "Ordinance and Law"].includes(p.type)).reduce((s, p) => s + insNum(p.amount), 0));
   const totalCollected = round2(insuranceCheckReceived + deductibleCollected + recoverableDepReceived + otherInsuranceReceived);
   const outstandingToCollect = round2(expectedRevenue - totalCollected);
-  const missingReceiptsTotal = round2(expList.filter(e => e.receiptStatus === "Missing").reduce((s, e) => s + insNum(e.amount), 0));
+  const pendingExpensesTotal = round2(expList.filter(e => e.receiptStatus === "Pending").reduce((s, e) => s + insNum(e.amount), 0));
   return {
     settlement,
     interest,
@@ -3189,7 +3202,7 @@ function calcFinancialDashboard(job, payments, expenses) {
     otherInsuranceReceived,
     totalCollected,
     outstandingToCollect,
-    missingReceiptsTotal
+    pendingExpensesTotal
   };
 }
 function bigCardColor(kind, calc) {
@@ -3468,10 +3481,10 @@ function BlockCard({
 }
 const INSURANCE_DETAILS_GROUPS = [{
   title: "Claim info",
-  fields: [["insuranceCarrier", "Insurance company", "text"], ["claimNum", "Claim #", "text"], ["insPolicyNumber", "Policy #", "text"], ["insDateOfLoss", "Date of loss", "date"], ["insPublicAdjusterName", "Public adjuster name", "text"]]
+  fields: [["insuranceCarrier", "Insurance company", "text"], ["claimNum", "Claim #", "text"], ["insPolicyNumber", "Policy #", "text"], ["insDateOfLoss", "Date of loss", "date"], ["insPublicAdjusterName", "Public adjuster name", "text"], ["insPALORSigned", "PA LOR signed?", "yesno"], ["insClaimOpenedBy", "Claim opened by", "select", ["GAP", "ACA", "AR"]]]
 }, {
   title: "Valuation",
-  fields: [["insSettlementAmount", "Settlement / agreed amount", "number"], ["insInterestInFirstCheck", "Interest", "number"]]
+  fields: [["insRCV", "RCV (used when no Settlement documented)", "number"], ["insSettlementAmount", "Settlement / agreed amount", "number"], ["insInterestInFirstCheck", "Interest", "number"]]
 }, {
   title: "Depreciation",
   fields: [["insRecoverableDepreciation", "Recoverable depreciation", "number"], ["insRecoverableDepreciationReleased", "Released?", "yesno"], ["insNonRecoverableDepreciation", "Non-recoverable depreciation", "number"]]
@@ -3483,7 +3496,7 @@ const INSURANCE_DETAILS_GROUPS = [{
   fields: [["insPriorPayments", "Prior payments", "number"], ["insSupplementsApproved", "Supplemental payments", "number"], ["insOrdinanceLaw", "Ordinance and Law amount", "number"], ["insOrdinanceLawEligible", "O&L approved & collectible?", "yesno"]]
 }, {
   title: "Claim expenses",
-  fields: [["insPAFeeBasis", "PA fee basis", "select", ["Percent of settlement+interest", "Percent of RCV / Expected Revenue", "Manual amount", "Pending confirmation"]], ["insPAPercentage", "PA fee % (default 10%)", "number"], ["insPAFeeManualAmount", "PA fee manual amount", "number"], ["insAppraisalFee", "Appraisal fee", "number"], ["insOtherClaimFees", "Other claim fees", "number"]]
+  fields: [["insPAFeeBasis", "PA fee basis", "select", ["Percent of Total (Settlement or RCV)", "Manual amount", "Pending confirmation"]], ["insPAPercentage", "PA fee % (default 10%)", "number"], ["insPAFeeManualAmount", "PA fee manual amount", "number"], ["insAppraisalFee", "Appraisal fee", "number"], ["insOtherClaimFees", "Other claim fees", "number"]]
 }, {
   title: "Commission",
   fields: [["insCommissionPct", "Commission % (default 10%)", "number"], ["insCommissionAdvance", "Advance amount (default $500)", "number"]]
@@ -3497,7 +3510,7 @@ const INSURANCE_DETAILS_GROUPS = [{
 const PAYMENT_TYPES = ["First insurance check", "Recoverable depreciation check", "Supplement", "Ordinance and Law", "Customer deductible", "Customer upgrade", "Other"];
 const PAYMENT_STATUSES = ["Expected", "Received", "Deposited", "Cleared", "Voided"];
 const EXPENSE_CATEGORIES = ["Materials", "Labor", "Subcontractor", "Permit", "Dumpster", "Delivery", "Equipment", "Repair", "Customer Refund", "Other"];
-const RECEIPT_STATUSES = ["Available", "Missing", "Pending"];
+const RECEIPT_STATUSES = ["Paid", "Pending"];
 function Accordion({
   title,
   children,
@@ -3561,7 +3574,7 @@ function InsuranceFinancialsPanel({
     vendor: "",
     description: "",
     amount: "",
-    receiptStatus: "Missing",
+    receiptStatus: "Pending",
     paymentMethod: "",
     notes: ""
   });
@@ -3671,7 +3684,7 @@ function InsuranceFinancialsPanel({
       vendor: "",
       description: "",
       amount: "",
-      receiptStatus: "Missing",
+      receiptStatus: "Pending",
       paymentMethod: "",
       notes: ""
     });
@@ -3796,7 +3809,7 @@ function InsuranceFinancialsPanel({
     label: "Profit Margin %",
     value: calc.profitMarginPct != null ? calc.profitMarginPct + "%" : "Pending",
     color: bigCardColor("profit", calc)
-  })), calc.missingReceiptsTotal > 0 && React.createElement("div", {
+  })), calc.pendingExpensesTotal > 0 && React.createElement("div", {
     style: {
       fontSize: 11.5,
       color: "#8A6200",
@@ -3805,7 +3818,7 @@ function InsuranceFinancialsPanel({
       borderRadius: 4,
       marginBottom: 14
     }
-  }, "\u26A0 Missing Receipts: " + fmtMoney(calc.missingReceiptsTotal)), calc.paFee == null && React.createElement("div", {
+  }, "\u26A0 Pending Expenses: " + fmtMoney(calc.pendingExpensesTotal)), calc.paFee == null && React.createElement("div", {
     style: {
       fontSize: 11.5,
       color: DANGER_TEXT,
@@ -3848,27 +3861,22 @@ function InsuranceFinancialsPanel({
   })), React.createElement(BlockCard, {
     title: "2. Project Budget"
   }, React.createElement(MiniRow, {
-    label: "Settlement + Interest",
-    value: fmtMoney(calc.settlementPlusInterest),
+    label: "Total (Settlement or RCV + Supplements)",
+    value: fmtMoney(calc.expectedRevenue),
     sub: true
   }), React.createElement(MiniRow, {
     label: "Initial insurance check (" + (calc.hasDocumentedFirstCheck ? "documented" : "calc.") + ")",
     value: fmtMoney(calc.initialCheck),
     sub: true
-  }), React.createElement(OverrideRow, {
-    label: "Expected revenue",
-    calculatedValue: calc.expectedRevenueCalculated,
-    currentValue: calc.expectedRevenue,
-    isOverridden: calc.usingExpectedRevenueOverride,
-    fieldKey: "insExpectedRevenueOverride",
-    jobId: job.id,
-    onSave: onSave
   }), React.createElement(MiniRow, {
     label: "PA Fee (" + calc.paPct + "%)",
     value: calc.paFee != null ? fmtMoney(calc.paFee) : "Pending"
   }), React.createElement(MiniRow, {
     label: "Appraisal Fee",
     value: fmtMoney(calc.appraisalFee)
+  }), React.createElement(MiniRow, {
+    label: "Deductible",
+    value: fmtMoney(calc.deductible)
   }), calc.otherClaimFees > 0 && React.createElement(MiniRow, {
     label: "Other claim fees",
     value: fmtMoney(calc.otherClaimFees),
@@ -4025,7 +4033,7 @@ function InsuranceFinancialsPanel({
       padding: "4px 6px",
       borderRadius: 4,
       border: `1px solid ${LINE}`,
-      background: x.receiptStatus === "Missing" ? DANGER_BG : x.receiptStatus === "Available" ? OK_BG : "#FDF3D9"
+      background: x.receiptStatus === "Paid" ? OK_BG : "#FDF3D9"
     }
   }, RECEIPT_STATUSES.map(s => React.createElement("option", {
     key: s,
