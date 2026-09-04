@@ -762,6 +762,129 @@ async function api(action, params, isPost, body) {
     return res.json();
   }
 }
+function LoginScreen({ onLogin }) {
+  const [username, setUsername] = useState("");
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!username.trim() || !pin.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await api(null, null, true, { action: "login", username: username.trim(), pin: pin.trim() });
+      if (res.ok) {
+        localStorage.setItem('crm_user', JSON.stringify(res.user));
+        onLogin(res.user);
+      } else {
+        setError(res.error || "Login failed.");
+      }
+    } catch (err) {
+      setError("Couldn't reach the CRM. Check your connection.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return React.createElement("div", { style: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: PAPER, fontFamily: FONT_BODY } },
+    React.createElement("form", { onSubmit: submit, style: { background: CARD, border: `1px solid ${LINE}`, borderRadius: 10, padding: 32, width: 300 } },
+      React.createElement("div", { style: { fontFamily: FONT_HEAD, fontSize: 20, fontWeight: 600, marginBottom: 4 } }, "GAP ROOFING ", React.createElement("span", { style: { color: RUST } }, "&"), " CONSTRUCTION"),
+      React.createElement("div", { style: { fontSize: 12, color: MUTE, marginBottom: 22 } }, "Sign in to the CRM"),
+      React.createElement("label", { style: { display: "block", fontSize: 12.5, fontWeight: 600, marginBottom: 5 } }, "Username"),
+      React.createElement("input", {
+        value: username, onChange: e => setUsername(e.target.value), autoFocus: true,
+        style: { width: "100%", padding: "9px 10px", borderRadius: 6, border: `1px solid ${LINE}`, fontSize: 14, marginBottom: 14, boxSizing: "border-box" }
+      }),
+      React.createElement("label", { style: { display: "block", fontSize: 12.5, fontWeight: 600, marginBottom: 5 } }, "PIN"),
+      React.createElement("input", {
+        value: pin, onChange: e => setPin(e.target.value), type: "password", inputMode: "numeric",
+        style: { width: "100%", padding: "9px 10px", borderRadius: 6, border: `1px solid ${LINE}`, fontSize: 14, marginBottom: 16, boxSizing: "border-box" }
+      }),
+      error && React.createElement("div", { style: { background: "#FBEAEA", color: "#A02525", fontSize: 12.5, padding: "8px 10px", borderRadius: 6, marginBottom: 14 } }, error),
+      React.createElement("button", {
+        type: "submit", disabled: busy,
+        style: { width: "100%", padding: "10px 16px", borderRadius: 6, border: "none", background: RUST, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer" }
+      }, busy ? "Signing in…" : "Sign in")
+    )
+  );
+}
+function UserManagementPanel({ reps }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ name: "", username: "", pin: "", role: "Rep", repName: "" });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  function load() {
+    setLoading(true);
+    api("users").then(r => setUsers(r.users || [])).finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, []);
+
+  async function submit() {
+    if (!form.name.trim() || !form.username.trim() || !form.pin.trim()) return;
+    setBusy(true);
+    setError("");
+    const res = await api(null, null, true, { action: "addUser", user: { ...form, repName: form.repName || form.name } });
+    setBusy(false);
+    if (res.ok) {
+      setForm({ name: "", username: "", pin: "", role: "Rep", repName: "" });
+      load();
+    } else {
+      setError(res.error || "Couldn't create the user.");
+    }
+  }
+  async function toggleActive(u) {
+    await api(null, null, true, { action: "updateUser", id: u.id, patch: { active: u.active === "No" ? "Yes" : "No" } });
+    load();
+  }
+  async function remove(u) {
+    if (!window.confirm(`Remove login access for ${u.name}?`)) return;
+    await api(null, null, true, { action: "removeUser", id: u.id });
+    load();
+  }
+
+  return React.createElement("div", { style: { marginTop: 24, background: CARD, border: `1px solid ${LINE}`, borderRadius: 8, padding: 16 } },
+    React.createElement("div", { style: { fontFamily: FONT_HEAD, fontSize: 16, marginBottom: 4 } }, "User Accounts"),
+    React.createElement("div", { style: { fontSize: 12, color: MUTE, marginBottom: 14 } }, "Admin sees everything. Rep accounts only see their own jobs — the \"Sales rep\" name here must exactly match how that rep's name appears on jobs."),
+
+    loading ? React.createElement("div", { style: { fontSize: 12.5, color: MUTE } }, "Loading…") :
+      React.createElement("div", { style: { marginBottom: 16 } },
+        users.length === 0 && React.createElement("div", { style: { fontSize: 12.5, color: MUTE } }, "No accounts yet — add one below."),
+        users.map(u => React.createElement("div", { key: u.id, style: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${LINE}`, fontSize: 12.5 } },
+          React.createElement("div", null,
+            React.createElement("span", { style: { fontWeight: 600 } }, u.name), " — ", u.username, " · ", u.role,
+            u.role === "Rep" && React.createElement("span", { style: { color: MUTE } }, " (sees jobs as \"" + u.repName + "\")"),
+            u.active === "No" && React.createElement("span", { style: { color: DANGER_TEXT, marginLeft: 6 } }, "inactive")
+          ),
+          React.createElement("div", { style: { display: "flex", gap: 8 } },
+            React.createElement("button", { onClick: () => toggleActive(u), style: { fontSize: 11.5, background: "none", border: `1px solid ${LINE}`, borderRadius: 4, padding: "3px 8px", cursor: "pointer" } }, u.active === "No" ? "Reactivate" : "Deactivate"),
+            React.createElement("button", { onClick: () => remove(u), style: { fontSize: 11.5, background: "none", border: "none", color: DANGER_TEXT, cursor: "pointer" } }, "Remove")
+          )
+        ))
+      ),
+
+    React.createElement("div", { style: { borderTop: `1px solid ${LINE}`, paddingTop: 14 } },
+      React.createElement("div", { style: { fontSize: 12, fontWeight: 700, color: MUTE, textTransform: "uppercase", marginBottom: 8 } }, "Add account"),
+      React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+        React.createElement("input", { placeholder: "Full name", value: form.name, onChange: e => setForm(p => ({ ...p, name: e.target.value })), style: { padding: "7px 9px", borderRadius: 5, border: `1px solid ${LINE}`, fontSize: 12.5 } }),
+        React.createElement("input", { placeholder: "Username", value: form.username, onChange: e => setForm(p => ({ ...p, username: e.target.value })), style: { padding: "7px 9px", borderRadius: 5, border: `1px solid ${LINE}`, fontSize: 12.5 } }),
+        React.createElement("input", { placeholder: "PIN", value: form.pin, onChange: e => setForm(p => ({ ...p, pin: e.target.value })), style: { padding: "7px 9px", borderRadius: 5, border: `1px solid ${LINE}`, fontSize: 12.5, width: 80 } }),
+        React.createElement("select", { value: form.role, onChange: e => setForm(p => ({ ...p, role: e.target.value })), style: { padding: "7px 9px", borderRadius: 5, border: `1px solid ${LINE}`, fontSize: 12.5 } },
+          React.createElement("option", { value: "Rep" }, "Rep"), React.createElement("option", { value: "Admin" }, "Admin")),
+        form.role === "Rep" && React.createElement("input", {
+          list: "rep-names-list", placeholder: "Sales rep name (as on jobs)", value: form.repName,
+          onChange: e => setForm(p => ({ ...p, repName: e.target.value })), style: { padding: "7px 9px", borderRadius: 5, border: `1px solid ${LINE}`, fontSize: 12.5, width: 200 }
+        }),
+        React.createElement("datalist", { id: "rep-names-list" }, (reps || []).map(r => React.createElement("option", { key: r, value: r }))),
+        React.createElement("button", { onClick: submit, disabled: busy, style: { padding: "7px 14px", borderRadius: 5, border: "none", background: RUST, color: "#fff", fontSize: 12.5, cursor: "pointer" } }, busy ? "Adding…" : "Add")
+      ),
+      error && React.createElement("div", { style: { color: DANGER_TEXT, fontSize: 12, marginTop: 8 } }, error)
+    )
+  );
+}
 function Tab({
   active,
   onClick,
@@ -1427,7 +1550,8 @@ function DetailModal({
 }
 function NewJobModal({
   onClose,
-  onCreate
+  onCreate,
+  defaultSalesRep
 }) {
   const [form, setForm] = useState({
     customerName: "",
@@ -1435,7 +1559,7 @@ function NewJobModal({
     ownerAddress: "",
     phone: "",
     email: "",
-    salesRep: "",
+    salesRep: defaultSalesRep || "",
     stage: "New Lead",
     jobType: "Insurance",
     insuranceCarrier: "",
@@ -1825,6 +1949,13 @@ function SettingsPanel({
   }))))));
 }
 function App() {
+  const [currentUser, setCurrentUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('crm_user') || 'null'); } catch (e) { return null; }
+  });
+  function handleLogout() {
+    localStorage.removeItem('crm_user');
+    setCurrentUser(null);
+  }
   const [jobs, setJobs] = useState(null);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -1956,6 +2087,8 @@ function App() {
       color: DANGER_TEXT
     }
   }, "Error: ", error, ". Check the config banner at the top (URL/token).");
+  if (!currentUser) return /*#__PURE__*/React.createElement(LoginScreen, { onLogin: setCurrentUser });
+  const isAdmin = currentUser.role === "Admin";
   if (!jobs) return /*#__PURE__*/React.createElement("div", {
     style: {
       padding: 40,
@@ -1963,11 +2096,12 @@ function App() {
       color: MUTE
     }
   }, "Loading jobs…");
-  const activeJobs = jobs.filter(j => !isClosed(j));
-  const archivedJobs = jobs.filter(j => isClosed(j));
-  const reps = ["All reps", ...Array.from(new Set(jobs.map(j => j.salesRep || "Unassigned"))).sort()];
+  const visibleJobs = currentUser && currentUser.role === "Rep" ? jobs.filter(j => (j.salesRep || "") === currentUser.repName) : jobs;
+  const activeJobs = visibleJobs.filter(j => !isClosed(j));
+  const archivedJobs = visibleJobs.filter(j => isClosed(j));
+  const reps = ["All reps", ...Array.from(new Set(visibleJobs.map(j => j.salesRep || "Unassigned"))).sort()];
   const dupCounts = {};
-  jobs.forEach(j => {
+  visibleJobs.forEach(j => {
     const k = normalizeName(j.customerName);
     if (k) dupCounts[k] = (dupCounts[k] || 0) + 1;
   });
@@ -1985,7 +2119,7 @@ function App() {
   }
   const filtered = activeJobs.filter(matchesFilter).filter(j => !stageFilter || j.stage === stageFilter);
   const filteredArchive = archivedJobs.filter(matchesFilter);
-  const finRows = jobs.filter(matchesFilter);
+  const finRows = visibleJobs.filter(matchesFilter);
   const finTotals = finRows.reduce((a, r) => ({
     revenue: a.revenue + (Number(r.contractAmount) || 0),
     commission: a.commission + calcCommission(r),
@@ -2005,7 +2139,7 @@ function App() {
   activeJobs.forEach(j => stageCounts[j.stage] = (stageCounts[j.stage] || 0) + 1);
   const visibleStages = STAGE_ORDER.filter(s => STAGE_GROUP[s] !== "won" && STAGE_GROUP[s] !== "lost" && (stageCounts[s] > 0 || s === stageFilter));
   const payroll = reps.filter(r => r !== "All reps").map(rep => {
-    const repJobs = jobs.filter(j => (j.salesRep || "Unassigned") === rep);
+    const repJobs = visibleJobs.filter(j => (j.salesRep || "Unassigned") === rep);
     const activeCount = repJobs.filter(j => !isClosed(j)).length;
     const commissionEligible = repJobs.filter(j => STAGE_GROUP[j.stage] !== "lost");
     const commissionEarned = commissionEligible.reduce((s, j) => s + calcCommission(j), 0);
@@ -2019,7 +2153,7 @@ function App() {
     };
   }).filter(r => r.activeCount > 0);
   const staleCount = activeJobs.filter(isStale).length;
-  const scheduledJobs = jobs.filter(j => !isClosed(j)).flatMap(j => {
+  const scheduledJobs = visibleJobs.filter(j => !isClosed(j)).flatMap(j => {
     const entries = [];
     if (j.inspectionDateTime) entries.push({
       ...j,
@@ -2092,7 +2226,12 @@ function App() {
       color: MUTE,
       textTransform: "uppercase"
     }
-  }, "Pipeline CRM · San Antonio, TX")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Tab, {
+  }, "Pipeline CRM · San Antonio, TX"), /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 11.5, color: MUTE, marginTop: 4, display: "flex", alignItems: "center", gap: 8 }
+  }, currentUser.name + " · " + currentUser.role, /*#__PURE__*/React.createElement("button", {
+    onClick: handleLogout,
+    style: { background: "none", border: "none", color: RUST, textDecoration: "underline", cursor: "pointer", fontSize: 11.5, padding: 0 }
+  }, "Log out"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Tab, {
     active: view === "attention",
     onClick: () => setView("attention"),
     label: "🚦 Attention"
@@ -2104,7 +2243,7 @@ function App() {
     active: view === "table",
     onClick: () => setView("table"),
     label: "Table"
-  }), /*#__PURE__*/React.createElement(Tab, {
+  }), isAdmin && /*#__PURE__*/React.createElement(Tab, {
     active: view === "payroll",
     onClick: () => setView("payroll"),
     label: "Payroll"
@@ -2112,7 +2251,7 @@ function App() {
     active: view === "archive",
     onClick: () => setView("archive"),
     label: `Archive (${archivedJobs.length})`
-  }), /*#__PURE__*/React.createElement(Tab, {
+  }), isAdmin && /*#__PURE__*/React.createElement(Tab, {
     active: view === "financial",
     onClick: () => setView("financial"),
     label: "Financial"
@@ -2120,7 +2259,7 @@ function App() {
     active: view === "briefing",
     onClick: () => setView("briefing"),
     label: "📋 Briefing"
-  }), /*#__PURE__*/React.createElement(Tab, {
+  }), isAdmin && /*#__PURE__*/React.createElement(Tab, {
     active: view === "settings",
     onClick: () => setView("settings"),
     label: "⚙️ Settings"
@@ -2589,7 +2728,7 @@ function App() {
         borderRadius: 4
       }
     }, "⚠ ", flags.length, " issue(s)")));
-  })))), view === "attention" && /*#__PURE__*/React.createElement(AttentionDashboard, { jobs: jobs || [] }), view === "payroll" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  })))), view === "attention" && /*#__PURE__*/React.createElement(AttentionDashboard, { jobs: visibleJobs || [] }), view === "payroll" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 10,
@@ -3108,14 +3247,15 @@ function App() {
     onAdd: addRecipient,
     onRemove: removeRecipient,
     onToggle: toggleRecipient
-  }), /*#__PURE__*/React.createElement(DetailModal, {
+  }), view === "settings" && /*#__PURE__*/React.createElement(UserManagementPanel, { reps: reps.filter(r => r !== "All reps") }), /*#__PURE__*/React.createElement(DetailModal, {
     job: selectedJob,
     onClose: () => setSelectedJob(null),
     onSave: saveJob,
     onDelete: deleteJob
   }), showNewJob && /*#__PURE__*/React.createElement(NewJobModal, {
     onClose: () => setShowNewJob(false),
-    onCreate: createJob
+    onCreate: createJob,
+    defaultSalesRep: !isAdmin ? currentUser.repName : ""
   }));
 }
 function round2(n) {
