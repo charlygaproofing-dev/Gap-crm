@@ -4905,6 +4905,88 @@ function PayrollLedgerModule({
       byRep
     };
   }
+
+  // --- Ledger: week periods (Mon-Sat) + customer names ---
+  const jobNameById = {};
+  (jobs || []).forEach(j => {
+    if (j && j.id) jobNameById[String(j.id)] = j.customerName || "";
+  });
+  const LEDGER_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function ledgerDay(s) {
+    if (!s) return null;
+    const m = /^([0-9]{4})-([0-9]{2})-([0-9]{2})/.exec(String(s));
+    return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+  }
+  function fmtLedgerDay(s) {
+    const d = ledgerDay(s);
+    return d ? LEDGER_MONTHS[d.getMonth()] + " " + d.getDate() : "no date";
+  }
+  function ledgerWeekKey(d) {
+    const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+    const p2 = n => String(n).padStart(2, "0");
+    return x.getFullYear() + "-" + p2(x.getMonth() + 1) + "-" + p2(x.getDate());
+  }
+  function ledgerWeekLabel(mondayStr) {
+    const m = ledgerDay(mondayStr);
+    const s = new Date(m.getFullYear(), m.getMonth(), m.getDate() + 5);
+    const f = d => LEDGER_MONTHS[d.getMonth()] + " " + d.getDate();
+    return "Week of " + f(m) + " – " + f(s) + ", " + s.getFullYear();
+  }
+  const ledgerSorted = filteredLedger.slice().sort((a, b) => {
+    const da = ledgerDay(a.date),
+      db = ledgerDay(b.date);
+    if (!da && !db) return 0;
+    if (!da) return 1;
+    if (!db) return -1;
+    return db - da;
+  });
+  const ledgerWeeks = [];
+  ledgerSorted.forEach(t => {
+    const d = ledgerDay(t.date);
+    const key = d ? ledgerWeekKey(d) : "nodate";
+    let g = null;
+    for (const w of ledgerWeeks) if (w.key === key) {
+      g = w;
+      break;
+    }
+    if (!g) {
+      g = {
+        key: key,
+        label: d ? ledgerWeekLabel(key) : "No date",
+        items: []
+      };
+      ledgerWeeks.push(g);
+    }
+    g.items.push(t);
+  });
+  function ledgerEntryEl(t) {
+    const cust = t.jobId && jobNameById[String(t.jobId)] ? " \u00b7 " + jobNameById[String(t.jobId)] : "";
+    const line1 = t.salesRep + " \u2014 " + t.type + " \u2014 " + payrollFmt(t.amount);
+    const line2 = fmtLedgerDay(t.date) + (t.jobId ? " \u00b7 Job " + t.jobId + cust : "") + (t.reason ? " \u00b7 " + t.reason : "");
+    const top = React.createElement("div", { style: { fontWeight: 600 } }, line1);
+    const sub = React.createElement("div", { style: { color: MUTE, fontSize: 11 } }, line2);
+    const badgeStyle = {
+      fontSize: 10.5,
+      fontWeight: 700,
+      padding: "3px 8px",
+      borderRadius: 4,
+      textTransform: "uppercase",
+      background: t.status === "Paid" ? OK_BG : t.status === "Assigned" ? "#E6F1FB" : "#FDF3D9",
+      color: t.status === "Paid" ? OK_TEXT : t.status === "Assigned" ? "#0C447C" : "#8A6200"
+    };
+    const left = React.createElement("div", null, top, sub);
+    const badge = React.createElement("span", { style: badgeStyle }, t.status);
+    const rowStyle = {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "8px 12px",
+      borderBottom: "1px solid " + LINE,
+      fontSize: 12.5
+    };
+    return React.createElement("div", { key: t.id, style: rowStyle }, left, badge);
+  }
   return React.createElement("div", {
     style: {
       marginTop: 24,
@@ -5133,43 +5215,25 @@ function PayrollLedgerModule({
       overflow: "hidden",
       marginBottom: 20
     }
-  }, filteredLedger.length === 0 && React.createElement("div", {
+  }, ledgerWeeks.length === 0 && React.createElement("div", {
     style: {
       padding: 14,
       textAlign: "center",
       color: MUTE,
       fontSize: 12.5
     }
-  }, "No entries."), filteredLedger.map(t => React.createElement("div", {
-    key: t.id,
+  }, "No entries."), ledgerWeeks.map(w => React.createElement(React.Fragment, {
+    key: w.key
+  }, React.createElement("div", {
     style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
       padding: "8px 12px",
-      borderBottom: `1px solid ${LINE}`,
-      fontSize: 12.5
-    }
-  }, React.createElement("div", null, React.createElement("div", {
-    style: {
-      fontWeight: 600
-    }
-  }, t.salesRep + " \u2014 " + t.type + " \u2014 " + payrollFmt(t.amount)), React.createElement("div", {
-    style: {
-      color: MUTE,
-      fontSize: 11
-    }
-  }, (t.date || "no date") + (t.jobId ? " \u00b7 Job " + t.jobId : "") + (t.reason ? " \u00b7 " + t.reason : ""))), React.createElement("span", {
-    style: {
-      fontSize: 10.5,
+      fontSize: 12,
       fontWeight: 700,
-      padding: "3px 8px",
-      borderRadius: 4,
-      textTransform: "uppercase",
-      background: t.status === "Paid" ? OK_BG : t.status === "Assigned" ? "#E6F1FB" : "#FDF3D9",
-      color: t.status === "Paid" ? OK_TEXT : t.status === "Assigned" ? "#0C447C" : "#8A6200"
+      color: INK,
+      background: "#F4F1E8",
+      borderBottom: `1px solid ${LINE}`
     }
-  }, t.status)))),
+  }, w.label + " (" + w.items.length + ")"), w.items.map(ledgerEntryEl)))),
   // Payroll runs
   React.createElement("div", {
     style: {
