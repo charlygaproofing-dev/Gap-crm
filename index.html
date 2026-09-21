@@ -3317,10 +3317,16 @@ function calcFinancialDashboard(job, payments, expenses) {
   const usingExpectedRevenueOverride = expectedRevenueOverride != null;
   const usingNetProjectBudgetOverride = netProjectBudgetOverride != null;
   const commissionPct = job.insCommissionPct != null && job.insCommissionPct !== "" ? insNum(job.insCommissionPct) : 10;
-  const commissionAdvance = job.insCommissionAdvance != null && job.insCommissionAdvance !== "" ? insNum(job.insCommissionAdvance) : 500;
-  const totalCommission = netProjectBudget != null ? round2(netProjectBudget * (commissionPct / 100)) : null;
-  const remainingCommission = totalCommission != null ? Math.max(0, round2(totalCommission - commissionAdvance)) : null;
   const expList = expenses || [];
+  // Real sales commission for this job: sum of "Pago de comisión" expenses.
+  // Falls back to the job's commission field when no commission expenses are logged yet.
+  const isCommissionExpense = e => (e.category === "Labor" && /pago de comisi/i.test(e.description || "")) || e.category === "Commission";
+  const commissionFromExpenses = round2(expList.filter(isCommissionExpense).reduce((s, e) => s + insNum(e.amount), 0));
+  const jobCommissionField = job.commission != null && job.commission !== "" ? insNum(job.commission) : null;
+  const totalCommission = commissionFromExpenses > 0 ? commissionFromExpenses : jobCommissionField;
+  // Advance paid: only what was actually recorded (insCommissionAdvance, then salesRepAdvancePaid). Never a fake default.
+  const commissionAdvance = job.insCommissionAdvance != null && job.insCommissionAdvance !== "" ? insNum(job.insCommissionAdvance) : job.salesRepAdvancePaid != null && job.salesRepAdvancePaid !== "" ? insNum(job.salesRepAdvancePaid) : 0;
+  const remainingCommission = totalCommission != null ? Math.max(0, round2(totalCommission - commissionAdvance)) : null;
   // Include the legacy single "Material cost" job field (if set) plus any
   // itemized Materials entries logged in Expense Details, so nothing
   // captured the old way gets silently dropped from the total.
@@ -3330,9 +3336,11 @@ function calcFinancialDashboard(job, payments, expenses) {
   // \u2014 never add both together, or the same cost gets counted twice.
   const materialsFromExpenses = round2(expList.filter(e => e.category === "Materials").reduce((s, e) => s + insNum(e.amount), 0));
   const materialsCost = materialsFromExpenses > 0 ? materialsFromExpenses : insNum(job.materialCost);
-  const laborFromExpenses = round2(expList.filter(e => e.category === "Labor").reduce((s, e) => s + insNum(e.amount), 0));
+  // Pure labor: exclude commission expenses so the commission is not counted twice
+  // (it already has its own "Sales commission" line and is part of Total Costs).
+  const laborFromExpenses = round2(expList.filter(e => e.category === "Labor" && !isCommissionExpense(e)).reduce((s, e) => s + insNum(e.amount), 0));
   const laborCost = laborFromExpenses > 0 ? laborFromExpenses : insNum(job.laborCost);
-  const otherExpensesCost = round2(expList.filter(e => e.category !== "Materials" && e.category !== "Labor").reduce((s, e) => s + insNum(e.amount), 0));
+  const otherExpensesCost = round2(expList.filter(e => !isCommissionExpense(e) && e.category !== "Materials" && e.category !== "Labor").reduce((s, e) => s + insNum(e.amount), 0));
   const totalCosts = totalCommission != null ? round2(totalCommission + materialsCost + laborCost + otherExpensesCost) : null;
   const profitLoss = netProjectBudget != null && totalCosts != null ? round2(netProjectBudget - totalCosts) : null;
   const profitMarginPct = profitLoss != null && netProjectBudget ? round2(profitLoss / netProjectBudget * 100) : null;
@@ -4070,7 +4078,7 @@ function InsuranceFinancialsPanel({
   })), React.createElement(BlockCard, {
     title: "3. Project Costs"
   }, React.createElement(MiniRow, {
-    label: "Sales commission (" + calc.commissionPct + "%)",
+    label: "Sales commission",
     value: calc.totalCommission != null ? fmtMoney(calc.totalCommission) : "Pending"
   }), React.createElement(MiniRow, {
     label: "Advance paid / Remaining",
