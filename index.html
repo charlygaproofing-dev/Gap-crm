@@ -3320,10 +3320,12 @@ function calcFinancialDashboard(job, payments, expenses) {
   const expList = expenses || [];
   // Real sales commission for this job: sum of "Pago de comisión" expenses.
   // Falls back to the job's commission field when no commission expenses are logged yet.
+   // A missing commission counts as $0 and never blocks the totals: project costs,
+   // profit and margin always reflect the expenses actually logged.
   const isCommissionExpense = e => (e.category === "Labor" && /pago de comisi/i.test(e.description || "")) || e.category === "Commission";
   const commissionFromExpenses = round2(expList.filter(isCommissionExpense).reduce((s, e) => s + insNum(e.amount), 0));
   const jobCommissionField = job.commission != null && job.commission !== "" ? insNum(job.commission) : null;
-  const totalCommission = commissionFromExpenses > 0 ? commissionFromExpenses : jobCommissionField;
+  const totalCommission = commissionFromExpenses > 0 ? commissionFromExpenses : (jobCommissionField != null ? jobCommissionField : 0);
   // Advance paid: only what was actually recorded (insCommissionAdvance, then salesRepAdvancePaid). Never a fake default.
   const commissionAdvance = job.insCommissionAdvance != null && job.insCommissionAdvance !== "" ? insNum(job.insCommissionAdvance) : job.salesRepAdvancePaid != null && job.salesRepAdvancePaid !== "" ? insNum(job.salesRepAdvancePaid) : 0;
   const remainingCommission = totalCommission != null ? Math.max(0, round2(totalCommission - commissionAdvance)) : null;
@@ -3341,7 +3343,7 @@ function calcFinancialDashboard(job, payments, expenses) {
   const laborFromExpenses = round2(expList.filter(e => e.category === "Labor" && !isCommissionExpense(e)).reduce((s, e) => s + insNum(e.amount), 0));
   const laborCost = laborFromExpenses > 0 ? laborFromExpenses : insNum(job.laborCost);
   const otherExpensesCost = round2(expList.filter(e => !isCommissionExpense(e) && e.category !== "Materials" && e.category !== "Labor").reduce((s, e) => s + insNum(e.amount), 0));
-  const totalCosts = totalCommission != null ? round2(totalCommission + materialsCost + laborCost + otherExpensesCost) : null;
+  const totalCosts = round2(totalCommission + materialsCost + laborCost + otherExpensesCost);
   const profitLoss = netProjectBudget != null && totalCosts != null ? round2(netProjectBudget - totalCosts) : null;
   const profitMarginPct = profitLoss != null && netProjectBudget ? round2(profitLoss / netProjectBudget * 100) : null;
   const payList = (payments || []).filter(p => ["Received", "Deposited", "Cleared"].includes(p.status));
