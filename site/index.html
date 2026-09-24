@@ -3417,11 +3417,17 @@ function calcFinancialDashboard(job, payments, expenses) {
   const profitLoss = netProjectBudget != null && totalCosts != null ? round2(netProjectBudget - totalCosts) : null;
   const profitMarginPct = profitLoss != null && netProjectBudget ? round2(profitLoss / netProjectBudget * 100) : null;
   const payList = (payments || []).filter(p => ["Received", "Deposited", "Cleared"].includes(p.status));
+  // Insurance vs customer split mirrors the company dashboard: known insurance
+  // payment types count as insurance money, the deductible keeps its own line,
+  // and every other received payment counts as customer money in, so no
+  // received payment is ever silently dropped from Money In.
+  const insurancePaymentTypes = ["First insurance check", "Recoverable depreciation check", "Supplement", "Ordinance and Law"];
   const insuranceCheckReceived = round2(payList.filter(p => p.type === "First insurance check").reduce((s, p) => s + insNum(p.amount), 0));
   const deductibleCollected = round2(payList.filter(p => p.type === "Customer deductible").reduce((s, p) => s + insNum(p.amount), 0));
   const recoverableDepReceived = round2(payList.filter(p => p.type === "Recoverable depreciation check").reduce((s, p) => s + insNum(p.amount), 0));
   const otherInsuranceReceived = round2(payList.filter(p => ["Supplement", "Ordinance and Law"].includes(p.type)).reduce((s, p) => s + insNum(p.amount), 0));
-  const totalCollected = round2(insuranceCheckReceived + deductibleCollected + recoverableDepReceived + otherInsuranceReceived);
+  const customerPaymentsReceived = round2(payList.filter(p => p.type !== "Customer deductible" && !insurancePaymentTypes.includes(p.type)).reduce((s, p) => s + insNum(p.amount), 0));
+  const totalCollected = round2(insuranceCheckReceived + deductibleCollected + recoverableDepReceived + otherInsuranceReceived + customerPaymentsReceived);
   const outstandingToCollect = round2(expectedRevenue - totalCollected);
   const pendingExpensesTotal = round2(expList.filter(e => e.receiptStatus === "Pending").reduce((s, e) => s + insNum(e.amount), 0));
   return {
@@ -3458,6 +3464,7 @@ function calcFinancialDashboard(job, payments, expenses) {
     deductibleCollected,
     recoverableDepReceived,
     otherInsuranceReceived,
+    customerPaymentsReceived,
     totalCollected,
     outstandingToCollect,
     pendingExpensesTotal
@@ -3998,7 +4005,7 @@ function InsuranceFinancialsPanel({
   }, React.createElement("button", {
     onClick: () => openInsuranceInvoice(job, {
       insurancePaymentsReceived: calc.insuranceCheckReceived + calc.otherInsuranceReceived,
-      customerPaymentsReceived: calc.deductibleCollected,
+      customerPaymentsReceived: calc.deductibleCollected + calc.customerPaymentsReceived,
       recoverableDep: calc.recoverableDep
     }),
     style: {
@@ -4108,6 +4115,10 @@ function InsuranceFinancialsPanel({
   }), calc.otherInsuranceReceived > 0 && React.createElement(MiniRow, {
     label: "Other insurance received",
     value: fmtMoney(calc.otherInsuranceReceived),
+    sub: true
+  }), calc.customerPaymentsReceived > 0 && React.createElement(MiniRow, {
+    label: "Customer payments received",
+    value: fmtMoney(calc.customerPaymentsReceived),
     sub: true
   }), React.createElement(MiniRow, {
     label: "Total Collected",
