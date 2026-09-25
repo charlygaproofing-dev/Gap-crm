@@ -125,8 +125,9 @@ const RUST = "#B5451C",
   STALE_DAYS = 14;
 const FONT_HEAD = "'Oswald', sans-serif",
   FONT_BODY = "'Inter', sans-serif";
-function isClosed(j) {
-  return j.closed === "Yes" || j.stage === "Paid / Closed Won";
+const CLOSED_STAGES = ["Paid / Closed Won", "Lost / Dead"];
+ function isClosed(j) {
+  return j.closed === "Yes" || CLOSED_STAGES.includes(j.stage);
 }
 function fmtMoney(v) {
   const n = Number(v);
@@ -1432,7 +1433,7 @@ function DetailModal({
     onChange: v => setForm(prev => ({
        ...prev,
      stage: v,
-     closed: v === "Paid / Closed Won" ? "Yes" : prev.closed
+     closed: CLOSED_STAGES.includes(v) ? "Yes" : prev.closed
     }))
   }), /*#__PURE__*/React.createElement(EditField, {
     label: "Insurance inspection date & time",
@@ -5346,7 +5347,7 @@ function PayrollLedgerModule({
 // calls per job), so this stays fast even with hundreds of jobs.
 function computeJobHealth(job) {
   const reasons = [];
-  const isClosed = job.closed === "Yes" || job.stage === "Paid / Closed Won";
+  const isClosed = job.closed === "Yes" || CLOSED_STAGES.includes(job.stage);
   const isInsurance = job.jobType === "Insurance";
   const num = v => {
     const n = Number(v);
