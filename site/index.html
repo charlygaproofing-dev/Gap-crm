@@ -127,7 +127,7 @@ const RUST = "#B5451C",
 const FONT_HEAD = "'Oswald', sans-serif",
   FONT_BODY = "'Inter', sans-serif";
 function isClosed(j) {
-  return j.closed === "Yes";
+  return j.closed === "Yes" || j.stage === "Paid / Closed Won";
 }
 function fmtMoney(v) {
   const n = Number(v);
@@ -1501,7 +1501,11 @@ function DetailModal({
     value: form.stage,
     type: "select",
     options: STAGE_ORDER,
-    onChange: set("stage")
+    onChange: v => setForm(prev => ({
+       ...prev,
+     stage: v,
+     closed: v === "Paid / Closed Won" ? "Yes" : prev.closed
+    }))
   }), /*#__PURE__*/React.createElement(EditField, {
     label: "Insurance inspection date & time",
     value: toDatetimeLocal(form.inspectionDateTime),
@@ -5414,7 +5418,7 @@ function PayrollLedgerModule({
 // calls per job), so this stays fast even with hundreds of jobs.
 function computeJobHealth(job) {
   const reasons = [];
-  const isClosed = job.closed === "Yes";
+  const isClosed = job.closed === "Yes" || job.stage === "Paid / Closed Won";
   const isInsurance = job.jobType === "Insurance";
   const num = v => {
     const n = Number(v);
@@ -5526,7 +5530,7 @@ function AttentionDashboard({
   jobs
 }) {
   const [expanded, setExpanded] = useState(null);
-  const activeJobs = (jobs || []).filter(j => j.closed !== "Yes");
+  const activeJobs = (jobs || []).filter(j => !isClosed(j));
   const scored = activeJobs.map(j => ({
     job: j,
     health: computeJobHealth(j)
@@ -5724,13 +5728,13 @@ function CompanyDashboard({
   const contractsInRange = jobList.filter(j => inRange(j.dateEntered, bounds));
   const totalContractValue = contractsInRange.reduce((s, j) => s + (Number(j.contractAmount) || 0), 0);
   const insuranceJobsInRange = contractsInRange.filter(j => j.jobType === "Insurance");
-  const closedInRange = jobList.filter(j => j.closed === "Yes" && inRange(j.lastUpdated, bounds));
-  const activePipeline = jobList.filter(j => j.closed !== "Yes").length;
+  const closedInRange = jobList.filter(j => isClosed(j) && inRange(j.lastUpdated, bounds));
+  const activePipeline = jobList.filter(j => !isClosed(j)).length;
 
   // Production
-  const scheduled = jobList.filter(j => j.stage === "Scheduled for Install" && j.closed !== "Yes").length;
-  const inProduction = jobList.filter(j => j.stage === "In Production" && j.closed !== "Yes").length;
-  const healthScored = jobList.filter(j => j.closed !== "Yes").map(j => computeJobHealth(j));
+  const scheduled = jobList.filter(j => j.stage === "Scheduled for Install" && !isClosed(j)).length;
+  const inProduction = jobList.filter(j => j.stage === "In Production" && !isClosed(j)).length;
+  const healthScored = jobList.filter(j => !isClosed(j)).map(j => computeJobHealth(j));
   const blockedCount = healthScored.filter(h => h.status === "red").length;
 
   // Revenue (from Payments ledger, company-wide, in range)
