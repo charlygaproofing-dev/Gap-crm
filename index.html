@@ -874,7 +874,7 @@ function UserManagementPanel({ reps }) {
         React.createElement("input", { placeholder: "Username", value: form.username, onChange: e => setForm(p => ({ ...p, username: e.target.value })), style: { padding: "7px 9px", borderRadius: 5, border: `1px solid ${LINE}`, fontSize: 12.5 } }),
         React.createElement("input", { placeholder: "PIN", value: form.pin, onChange: e => setForm(p => ({ ...p, pin: e.target.value })), style: { padding: "7px 9px", borderRadius: 5, border: `1px solid ${LINE}`, fontSize: 12.5, width: 80 } }),
         React.createElement("select", { value: form.role, onChange: e => setForm(p => ({ ...p, role: e.target.value })), style: { padding: "7px 9px", borderRadius: 5, border: `1px solid ${LINE}`, fontSize: 12.5 } },
-          React.createElement("option", { value: "Rep" }, "Rep"), React.createElement("option", { value: "Admin" }, "Admin")),
+          React.createElement("option", { value: "Rep" }, "Rep"), React.createElement("option", { value: "Supplements" }, "Supplements"), React.createElement("option", { value: "Admin" }, "Admin")),
         form.role === "Rep" && React.createElement("input", {
           list: "rep-names-list", placeholder: "Sales rep name (as on jobs)", value: form.repName,
           onChange: e => setForm(p => ({ ...p, repName: e.target.value })), style: { padding: "7px 9px", borderRadius: 5, border: `1px solid ${LINE}`, fontSize: 12.5, width: 200 }
@@ -1128,7 +1128,8 @@ function DetailModal({
   job,
   onClose,
   onSave,
-  onDelete
+  onDelete,
+  hideFinancials
 }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(null);
@@ -1311,10 +1312,10 @@ function DetailModal({
     href: `tel:${job.phone}`
   }, job.phone) : "—"), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Email:"), " ", job.email ? /*#__PURE__*/React.createElement("a", {
     href: `mailto:${job.email}`
-  }, job.email) : "—"), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Sales rep:"), " ", job.salesRep || "Unassigned"), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Date entered:"), " ", fmtDate(job.dateEntered), " · ", /*#__PURE__*/React.createElement("b", null, "Last updated:"), " ", fmtDate(job.lastUpdated)), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Job type:"), " ", job.jobType || "—"), job.jobType === "Insurance" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Insurance carrier:"), " ", job.insuranceCarrier || "—", " · ", /*#__PURE__*/React.createElement("b", null, "Claim #:"), " ", job.claimNum || "—"), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Weather report:"), " ", job.weatherReport || "No", " · ", /*#__PURE__*/React.createElement("b", null, "Public adjuster:"), " ", job.sentPublicAdjuster || "No", " · ", /*#__PURE__*/React.createElement("b", null, "Appraisal:"), " ", job.sentAppraisal || "No")), job.jobType === "Insurance" && /*#__PURE__*/React.createElement(InsuranceFinancialsPanel, {
+  }, job.email) : "—"), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Sales rep:"), " ", job.salesRep || "Unassigned"), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Date entered:"), " ", fmtDate(job.dateEntered), " · ", /*#__PURE__*/React.createElement("b", null, "Last updated:"), " ", fmtDate(job.lastUpdated)), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Job type:"), " ", job.jobType || "—"), job.jobType === "Insurance" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Insurance carrier:"), " ", job.insuranceCarrier || "—", " · ", /*#__PURE__*/React.createElement("b", null, "Claim #:"), " ", job.claimNum || "—"), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Weather report:"), " ", job.weatherReport || "No", " · ", /*#__PURE__*/React.createElement("b", null, "Public adjuster:"), " ", job.sentPublicAdjuster || "No", " · ", /*#__PURE__*/React.createElement("b", null, "Appraisal:"), " ", job.sentAppraisal || "No")), !hideFinancials && job.jobType === "Insurance" && /*#__PURE__*/React.createElement(InsuranceFinancialsPanel, {
     job: job,
     onSave: onSave
-  }), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Contract:"), " ", fmtMoney(job.contractAmount), " · ", /*#__PURE__*/React.createElement("b", null, "Balance due:"), " ", fmtMoney(job.balanceDue)), job.jobType !== "Insurance" && /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Commission:"), " ", fmtMoney(calcCommission(job)), " · ", /*#__PURE__*/React.createElement("b", null, "Advance paid:"), " ", job.salesRepAdvancePaid || "No"), job.jobType !== "Insurance" && /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Install crew paid:"), " ", job.installersPaidFull || "No", " · ", /*#__PURE__*/React.createElement("b", null, "Install payment:"), " ", fmtMoney(calcInstallPaid(job))), job.jobType !== "Insurance" && /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Material cost:"), " ", fmtMoney(calcMaterialCost(job)), job.jobType !== "Insurance" && /*#__PURE__*/React.createElement(React.Fragment, null, " · ", /*#__PURE__*/React.createElement("b", null, "Net P/L:"), " ", fmtSigned(calcNetPL(job)))), job.notes && /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Notes:"), " ", job.notes), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Insurance inspection date/time:"), " ", fmtDateTime(job.inspectionDateTime), job.inspectionDateTime && job.reminderSent === "Yes" ? " (2-hour reminder already sent)" : ""), /*#__PURE__*/React.createElement("a", {
+  }), /*#__PURE__*/!hideFinancials && React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Contract:"), " ", fmtMoney(job.contractAmount), " · ", /*#__PURE__*/React.createElement("b", null, "Balance due:"), " ", fmtMoney(job.balanceDue)), job.jobType !== "Insurance" && /*#__PURE__*/!hideFinancials && React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Commission:"), " ", fmtMoney(calcCommission(job)), " · ", /*#__PURE__*/React.createElement("b", null, "Advance paid:"), " ", job.salesRepAdvancePaid || "No"), job.jobType !== "Insurance" && /*#__PURE__*/!hideFinancials && React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Install crew paid:"), " ", job.installersPaidFull || "No", " · ", /*#__PURE__*/React.createElement("b", null, "Install payment:"), " ", fmtMoney(calcInstallPaid(job))), job.jobType !== "Insurance" && /*#__PURE__*/!hideFinancials && React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Material cost:"), " ", fmtMoney(calcMaterialCost(job)), job.jobType !== "Insurance" && /*#__PURE__*/React.createElement(React.Fragment, null, " · ", /*#__PURE__*/React.createElement("b", null, "Net P/L:"), " ", fmtSigned(calcNetPL(job)))), job.notes && /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Notes:"), " ", job.notes), /*#__PURE__*/React.createElement("p", null, /*#__PURE__*/React.createElement("b", null, "Insurance inspection date/time:"), " ", fmtDateTime(job.inspectionDateTime), job.inspectionDateTime && job.reminderSent === "Yes" ? " (2-hour reminder already sent)" : ""), /*#__PURE__*/React.createElement("a", {
     href: calendarLink(job, "insurance"),
     target: "_blank",
     style: {
@@ -1504,42 +1505,42 @@ function DetailModal({
     value: form.sentAppraisal,
     type: "yesno",
     onChange: set("sentAppraisal")
-  }), /*#__PURE__*/React.createElement(EditField, {
+  }), !hideFinancials && /*#__PURE__*/React.createElement(EditField, {
     label: "Contract amount ($)",
     value: form.contractAmount,
     type: "number",
     onChange: set("contractAmount")
-  }), /*#__PURE__*/React.createElement(EditField, {
+  }), !hideFinancials && /*#__PURE__*/React.createElement(EditField, {
     label: "Balance due ($)",
     value: form.balanceDue,
     type: "number",
     onChange: set("balanceDue")
-  }), /*#__PURE__*/React.createElement(EditField, {
+  }), !hideFinancials && /*#__PURE__*/React.createElement(EditField, {
     label: "Commission ($)",
     value: form.commission,
     type: "number",
     onChange: set("commission")
-  }), /*#__PURE__*/React.createElement(EditField, {
+  }), !hideFinancials && /*#__PURE__*/React.createElement(EditField, {
     label: "Sales rep advance paid",
     value: form.salesRepAdvancePaid,
     type: "yesno",
     onChange: set("salesRepAdvancePaid")
-  }), /*#__PURE__*/React.createElement(EditField, {
+  }), !hideFinancials && /*#__PURE__*/React.createElement(EditField, {
     label: "Install crew paid in full",
     value: form.installersPaidFull,
     type: "yesno",
     onChange: set("installersPaidFull")
-  }), /*#__PURE__*/React.createElement(EditField, {
+  }), !hideFinancials && /*#__PURE__*/React.createElement(EditField, {
     label: "Install team advance ($)",
     value: form.installAdvance,
     type: "number",
     onChange: set("installAdvance")
-  }), /*#__PURE__*/React.createElement(EditField, {
+  }), !hideFinancials && /*#__PURE__*/React.createElement(EditField, {
     label: "Install team paid full ($)",
     value: form.installPaidFull,
     type: "number",
     onChange: set("installPaidFull")
-  }), /*#__PURE__*/React.createElement(EditField, {
+  }), !hideFinancials && /*#__PURE__*/React.createElement(EditField, {
     label: "Material cost ($)",
     value: form.materialCost,
     type: "number",
@@ -1556,7 +1557,8 @@ function DetailModal({
 function NewJobModal({
   onClose,
   onCreate,
-  defaultSalesRep
+  defaultSalesRep,
+  hideFinancials
 }) {
   const [form, setForm] = useState({
     customerName: "",
@@ -1675,7 +1677,7 @@ function NewJobModal({
     label: "Claim #",
     value: form.claimNum,
     onChange: set("claimNum")
-  }), /*#__PURE__*/React.createElement(EditField, {
+  }), !hideFinancials && /*#__PURE__*/React.createElement(EditField, {
     label: "Contract amount ($)",
     value: form.contractAmount,
     type: "number",
@@ -2094,6 +2096,7 @@ function App() {
   }, "Error: ", error, ". Check the config banner at the top (URL/token).");
   if (!currentUser) return /*#__PURE__*/React.createElement(LoginScreen, { onLogin: setCurrentUser });
   const isAdmin = currentUser.role === "Admin";
+  const isSupplements = currentUser.role === "Supplements";
   if (!jobs) return /*#__PURE__*/React.createElement("div", {
     style: {
       padding: 40,
@@ -2244,7 +2247,7 @@ function App() {
     active: view === "kanban",
     onClick: () => setView("kanban"),
     label: "Board"
-  }), /*#__PURE__*/React.createElement(Tab, {
+  }), !isSupplements && /*#__PURE__*/React.createElement(Tab, {
     active: view === "table",
     onClick: () => setView("table"),
     label: "Table"
@@ -2679,7 +2682,7 @@ function App() {
       background: "#EEECE4",
       textAlign: "left"
     }
-  }, ["ID", "Customer", "Rep", "Contract", "Financial status"].map(h => /*#__PURE__*/React.createElement("th", {
+  }, (isSupplements ? ["ID", "Customer", "Rep"] : ["ID", "Customer", "Rep", "Contract", "Financial status"]).map(h => /*#__PURE__*/React.createElement("th", {
     key: h,
     style: {
       padding: "8px 12px",
@@ -2710,11 +2713,11 @@ function App() {
       style: {
         padding: "8px 12px"
       }
-    }, j.salesRep || "Unassigned"), /*#__PURE__*/React.createElement("td", {
+    }, j.salesRep || "Unassigned"), !isSupplements && /*#__PURE__*/React.createElement("td", {
       style: {
         padding: "8px 12px"
       }
-    }, fmtMoney(j.contractAmount)), /*#__PURE__*/React.createElement("td", {
+    }, fmtMoney(j.contractAmount)), !isSupplements && /*#__PURE__*/React.createElement("td", {
       style: {
         padding: "8px 12px"
       }
@@ -3254,13 +3257,15 @@ function App() {
     onToggle: toggleRecipient
   }), view === "settings" && /*#__PURE__*/React.createElement(UserManagementPanel, { reps: reps.filter(r => r !== "All reps") }), /*#__PURE__*/React.createElement(DetailModal, {
     job: selectedJob,
+    hideFinancials: isSupplements,
     onClose: () => setSelectedJob(null),
     onSave: saveJob,
     onDelete: deleteJob
   }), showNewJob && /*#__PURE__*/React.createElement(NewJobModal, {
     onClose: () => setShowNewJob(false),
     onCreate: createJob,
-    defaultSalesRep: !isAdmin ? currentUser.repName : ""
+    defaultSalesRep: !isAdmin ? currentUser.repName : "",
+    hideFinancials: isSupplements
   }));
 }
 function round2(n) {
