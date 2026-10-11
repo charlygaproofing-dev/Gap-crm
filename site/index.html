@@ -738,7 +738,7 @@ function jobFinancialFlags(j) {
   if (j.installersPaidFull !== "Yes") flags.push("Install crew not marked paid in full");
   return flags;
 }
-async function api(action, params, isPost, body) {
+async function apiRaw(action, params, isPost, body) {
   if (!CFG.url) throw new Error("Not configured");
   if (!isPost) {
     const q = new URLSearchParams({
@@ -763,6 +763,22 @@ async function api(action, params, isPost, body) {
     });
     return res.json();
   }
+}
+// Retry wrapper: GET reads retry up to 3x with backoff (transient Apps Script
+// cold starts / network blips). POST writes are NOT retried to avoid duplicates.
+async function api(action, params, isPost, body) {
+  if (isPost) return apiRaw(action, params, isPost, body);
+  let lastErr = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await apiRaw(action, params, isPost, body);
+    } catch (err) {
+      lastErr = err;
+      if (String(err && err.message).indexOf("Not configured") >= 0) throw err;
+      if (attempt < 2) await new Promise(r => setTimeout(r, 1500 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
 }
 function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState("");
