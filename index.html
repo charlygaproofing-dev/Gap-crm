@@ -1140,12 +1140,137 @@ function DocumentsSection({
     }
   }, "Add link")));
 }
+function SupplementsSection({
+  jobId,
+  authorName
+}) {
+  const [notes, setNotes] = useState([]);
+  const [note, setNote] = useState("");
+  const [status, setStatus] = useState("Pendiente");
+  const STATUSES = ["Pendiente", "En proceso", "Enviado", "Aprobado", "Pagado"];
+  useEffect(() => {
+    api("supplementNotes", {
+      jobId
+    }).then(r => setNotes(r.supplementNotes || [])).catch(() => setNotes([]));
+  }, [jobId]);
+  async function add() {
+    if (!note.trim()) return;
+    await api(null, null, true, {
+      action: "addSupplementNote",
+      jobId,
+      note: note.trim(),
+      author: authorName || "Unknown",
+      status: status
+    });
+    setNote("");
+    setStatus("Pendiente");
+    api("supplementNotes", {
+      jobId
+    }).then(r => setNotes(r.supplementNotes || [])).catch(() => {});
+  }
+  const currentStatus = notes.length > 0 ? notes[notes.length - 1].status : null;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: MUTE,
+      textTransform: "uppercase",
+      marginBottom: 6
+    }
+  }, "\uD83C\uDFE0 Supplements", currentStatus && /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: 8,
+      padding: "2px 8px",
+      borderRadius: 10,
+      background: "#e8f0e8",
+      color: "#2d5a2d",
+      fontSize: 10,
+      textTransform: "none"
+    }
+  }, currentStatus)), notes.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12.5,
+      color: MUTE,
+      marginBottom: 8
+    }
+  }, "No supplement notes yet."), notes.map((n, i) => /*#__PURE__*/React.createElement("div", {
+    key: n.id || i,
+    style: {
+      padding: "6px 0",
+      borderBottom: `1px solid ${LINE}`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      fontSize: 12,
+      color: MUTE
+    }
+  }, /*#__PURE__*/React.createElement("span", null, n.date, " \u00B7 ", n.author), /*#__PURE__*/React.createElement("span", {
+    style: {
+      padding: "1px 7px",
+      borderRadius: 9,
+      background: "#f0f0f0",
+      fontSize: 11
+    }
+  }, n.status)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      marginTop: 2
+    }
+  }, n.note))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      marginTop: 8,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("textarea", {
+    value: note,
+    onChange: e => setNote(e.target.value),
+    placeholder: "Add supplement note...",
+    rows: 2,
+    style: {
+      flex: "2 1 180px",
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`
+    }
+  }), /*#__PURE__*/React.createElement("select", {
+    value: status,
+    onChange: e => setStatus(e.target.value),
+    style: {
+      flex: "1 1 120px",
+      padding: "7px 9px",
+      borderRadius: 5,
+      border: `1px solid ${LINE}`
+    }
+  }, STATUSES.map(s => /*#__PURE__*/React.createElement("option", {
+    key: s,
+    value: s
+  }, s))), /*#__PURE__*/React.createElement("button", {
+    onClick: add,
+    style: {
+      padding: "7px 14px",
+      borderRadius: 5,
+      border: "none",
+      background: RUST,
+      color: "#fff",
+      cursor: "pointer"
+    }
+  }, "Add note")));
+}
+
 function DetailModal({
   job,
   onClose,
   onSave,
   onDelete,
-  hideFinancials
+  hideFinancials,
+  currentUserName
 }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(null);
@@ -1568,6 +1693,9 @@ function DetailModal({
     onChange: set("notes")
   })), /*#__PURE__*/React.createElement(DocumentsSection, {
     jobId: job.id
+  }), /*#__PURE__*/React.createElement(SupplementsSection, {
+    jobId: job.id,
+    authorName: currentUserName
   }))));
 }
 function NewJobModal({
@@ -3274,6 +3402,7 @@ function App() {
   }), view === "settings" && /*#__PURE__*/React.createElement(UserManagementPanel, { reps: reps.filter(r => r !== "All reps") }), /*#__PURE__*/React.createElement(DetailModal, {
     job: selectedJob,
     hideFinancials: isSupplements,
+    currentUserName: currentUser.name,
     onClose: () => setSelectedJob(null),
     onSave: saveJob,
     onDelete: deleteJob
