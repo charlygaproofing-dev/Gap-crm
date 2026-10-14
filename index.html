@@ -1146,8 +1146,8 @@ function SupplementsSection({
 }) {
   const [notes, setNotes] = useState([]);
   const [note, setNote] = useState("");
-  const [status, setStatus] = useState("Pendiente");
-  const STATUSES = ["Pendiente", "En proceso", "Enviado", "Aprobado", "Pagado"];
+  const [status, setStatus] = useState("Pending");
+  const STATUSES = ["Pending", "In progress", "Submitted", "Approved", "Paid"];
   useEffect(() => {
     api("supplementNotes", {
       jobId
@@ -1163,7 +1163,7 @@ function SupplementsSection({
       status: status
     });
     setNote("");
-    setStatus("Pendiente");
+    setStatus("Pending");
     api("supplementNotes", {
       jobId
     }).then(r => setNotes(r.supplementNotes || [])).catch(() => {});
