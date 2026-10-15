@@ -3514,6 +3514,8 @@ function calcFinancialDashboard(job, payments, expenses) {
   const customerPaymentsReceived = round2(payList.filter(p => p.type !== "Customer deductible" && !insurancePaymentTypes.includes(p.type)).reduce((s, p) => s + insNum(p.amount), 0));
   const totalCollected = round2(insuranceCheckReceived + deductibleCollected + recoverableDepReceived + otherInsuranceReceived + customerPaymentsReceived);
   const outstandingToCollect = round2(expectedRevenue - totalCollected);
+  const expectedPayList = (payments || []).filter(p => p.status === "Expected");
+  const expectedIncomingTotal = round2(expectedPayList.reduce((s, p) => s + insNum(p.amount), 0));
   const pendingExpensesTotal = round2(expList.filter(e => e.receiptStatus === "Pending").reduce((s, e) => s + insNum(e.amount), 0));
   return {
     settlement,
@@ -3552,6 +3554,8 @@ function calcFinancialDashboard(job, payments, expenses) {
     customerPaymentsReceived,
     totalCollected,
     outstandingToCollect,
+    expectedPayList,
+    expectedIncomingTotal,
     pendingExpensesTotal
   };
 }
@@ -4212,6 +4216,17 @@ function InsuranceFinancialsPanel({
     label: "Outstanding to collect",
     value: fmtMoney(calc.outstandingToCollect),
     sub: true
+  }), (calc.expectedPayList.length > 0) && React.createElement(MiniRow, {
+    label: "Expected checks (" + calc.expectedPayList.length + ")",
+    value: fmtMoney(calc.expectedIncomingTotal),
+    sub: true
+  }), calc.expectedPayList.map(function(p) {
+    return React.createElement(MiniRow, {
+      key: "exp-" + p.id,
+      label: "- " + (p.type || "Payment") + (p.source ? " / " + p.source : "") + (p.date ? " (" + p.date + ")" : ""),
+      value: fmtMoney(insNum(p.amount)),
+      sub: true
+    });
   })), React.createElement(BlockCard, {
     title: "2. Project Budget"
   }, React.createElement(MiniRow, {
